@@ -2,7 +2,7 @@
 
 This is a driver for the many-and-various Prolific PL2303 serial-to-USB
 adapters that are out there.I just updated it to work on OS X Lion (10.7)
-and OS X Mountain Lion (10.).
+and OS X Mountain Lion (10.8).
 
 I forked this project from [failberg/osx-pl2303](http://github.com/downloads/failberg/osx-pl2303).
 
