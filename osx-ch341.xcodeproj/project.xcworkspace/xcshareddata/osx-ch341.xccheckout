@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>IDESourceControlProjectFavoriteDictionaryKey</key>
+	<false/>
+	<key>IDESourceControlProjectIdentifier</key>
+	<string>5AC2F8D7-8115-43B7-BB3C-8C4519FF63E1</string>
+	<key>IDESourceControlProjectName</key>
+	<string>osx-ch341</string>
+	<key>IDESourceControlProjectOriginsDictionary</key>
+	<dict>
+		<key>FBF309EA78F93DFAEDFAD0F3B5139F11FA046DFC</key>
+		<string>https://github.com/mpepping/osx-pl2303.git</string>
+	</dict>
+	<key>IDESourceControlProjectPath</key>
+	<string>osx-ch341.xcodeproj</string>
+	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
+	<dict>
+		<key>FBF309EA78F93DFAEDFAD0F3B5139F11FA046DFC</key>
+		<string>../..</string>
+	</dict>
+	<key>IDESourceControlProjectURL</key>
+	<string>https://github.com/mpepping/osx-pl2303.git</string>
+	<key>IDESourceControlProjectVersion</key>
+	<integer>111</integer>
+	<key>IDESourceControlProjectWCCIdentifier</key>
+	<string>FBF309EA78F93DFAEDFAD0F3B5139F11FA046DFC</string>
+	<key>IDESourceControlProjectWCConfigurations</key>
+	<array>
+		<dict>
+			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
+			<string>public.vcs.git</string>
+			<key>IDESourceControlWCCIdentifierKey</key>
+			<string>FBF309EA78F93DFAEDFAD0F3B5139F11FA046DFC</string>
+			<key>IDESourceControlWCCName</key>
+			<string>osx-ch341</string>
+		</dict>
+	</array>
+</dict>
+</plist>
