@@ -59,8 +59,6 @@
 #define productNameLength   32                  // Arbitrary length
 #define propertyTag     "Product Name"
 
-#define MAX_BLOCK_SIZE			PAGE_SIZE 
-// was PAGE_SIZE, but due to errors lowered to maximum of 10 characters
 
 #define kXOnChar  '\x11'
 #define kXOffChar '\x13'
@@ -161,6 +159,8 @@ enum tXO_State {
 
 #define INTERRUPT_BUFF_SIZE 10
 #define USBLapPayLoad       2048
+#define MAX_BLOCK_SIZE			PAGE_SIZE
+// was PAGE_SIZE, but due to errors lowered to maximum of 10 characters
 
 #define VENDOR_WRITE_REQUEST_TYPE	USBmakebmRequestType(kUSBOut,kUSBVendor,kUSBDevice)
 #define VENDOR_READ_REQUEST_TYPE	USBmakebmRequestType(kUSBIn,kUSBVendor,kUSBDevice) 

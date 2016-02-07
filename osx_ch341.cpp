@@ -1247,17 +1247,16 @@ Fail:
 UInt32 osx_wch_driver_ch341::readPortState( PortInfo_t *port )
 {
     UInt32              returnState;
-	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState IOLockLock( port->serialRequestLock );\n" );
+//	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState IOLockLock( port->serialRequestLock );\n" );
 
     IOLockLock( port->serialRequestLock );
-	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState port->State=%u\n", returnState );
 
 	returnState = port->State;
-	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState IOLockUnLock( port->serialRequestLock );\n" );
+//	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState IOLockUnLock( port->serialRequestLock );\n" );
 
 	IOLockUnlock( port->serialRequestLock);
 	
-	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState returnstate: %u \n", returnState );
+	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState returnstate: 0x%x \n", returnState );
 	
     return returnState;
     
@@ -1283,18 +1282,17 @@ void osx_wch_driver_ch341::changeState( PortInfo_t *port, UInt32 state, UInt32 m
     UInt32              delta;
     DEBUG_IOLog(6,"%s(%p)::changeState\n", getName(), this);
 	
-	DEBUG_IOLog(6,"osx_wch_driver_ch341::changeState IOLockLock( port->serialRequestLock );\n" );
+//	DEBUG_IOLog(6,"osx_wch_driver_ch341::changeState IOLockLock( port->serialRequestLock );\n" );
 
 	IOLockLock( port->serialRequestLock );
 	
 
-	DEBUG_IOLog(6,"state before: %u mask %u \n",state,mask);
+	DEBUG_IOLog(6,"change state: 0x%x mask 0x%x \n",state,mask);
 
     state = (port->State & ~mask) | (state & mask); // compute the new state
-	DEBUG_IOLog(6,"state after: %u \n",state);
-
     delta = state ^ port->State;                    // keep a copy of the diffs
-	DEBUG_IOLog(6,"state port: %u delta %u \n",port->State, delta);
+
+	DEBUG_IOLog(6,"new state: 0x%x delta 0x%x \n",state, delta);
 
     port->State = state;
 
@@ -1307,7 +1305,7 @@ void osx_wch_driver_ch341::changeState( PortInfo_t *port, UInt32 state, UInt32 m
 	}
 
 
-	DEBUG_IOLog(6,"osx_wch_driver_ch341::changeState IOLockUnLock( port->serialRequestLock );\n" );
+//	DEBUG_IOLog(6,"osx_wch_driver_ch341::changeState IOLockUnLock( port->serialRequestLock );\n" );
 		
     IOLockUnlock( port->serialRequestLock );
 
@@ -1357,9 +1355,6 @@ void osx_wch_driver_ch341::changeState( PortInfo_t *port, UInt32 state, UInt32 m
 IOReturn osx_wch_driver_ch341::acquirePort(bool sleep, void *refCon)
 {
     IOReturn	ret;
-    DEBUG_IOLog(4,"%s(%p)::acquirePort\n", getName(), this);
-    
-    return kIOReturnIOError; // ----
 
     retain();
     ret = fCommandGate->runAction(acquirePortAction, (void *)sleep, (void *)refCon);
@@ -1379,8 +1374,6 @@ IOReturn osx_wch_driver_ch341::acquirePort(bool sleep, void *refCon)
 
 IOReturn osx_wch_driver_ch341::acquirePortAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
 {
-    DEBUG_IOLog(4,"osx_wch_driver_ch341::acquirePortAction\n");
-
     return ((osx_wch_driver_ch341 *)owner)->acquirePortGated((bool)arg0, (void *)arg1);
     
 }/* end acquirePortAction */
@@ -1413,7 +1406,7 @@ IOReturn osx_wch_driver_ch341::acquirePortGated( bool sleep, void *refCon )
     if ( fTerminate ) {
 		DEBUG_IOLog(4,"%s(%p)::acquirePortGated Port is offline\n", getName(), this);
 		
-		//	    return kIOReturnOffline;
+//        return kIOReturnOffline;
 	}
     SetStructureDefaults( port, FALSE );    /* Initialize all the structures */
     
@@ -1451,7 +1444,7 @@ IOReturn osx_wch_driver_ch341::acquirePortGated( bool sleep, void *refCon )
 
 //    changeState( port, PD_RS232_S_CTS, PD_RS232_S_CTS);
 
-    DEBUG_IOLog(5,"%s(%p)::acquirePortGated check serial state\n", getName(), this);
+    DEBUG_IOLog(5,"%s(%p)::acquirePortGated check serial state fSessions=%d\n", getName(), this, fSessions);
 
 	CheckSerialState();       // turn serial on/off if appropriate
     
@@ -1476,7 +1469,6 @@ IOReturn osx_wch_driver_ch341::releasePort(void *refCon)
     IOReturn	ret;
     DEBUG_IOLog(4,"%s(%p)::releasePort\n", getName(), this);
     
-    return kIOReturnIOError; // ----
     retain();
     ret = fCommandGate->runAction(releasePortAction, (void *)refCon);
     release();
@@ -1567,9 +1559,8 @@ IOReturn osx_wch_driver_ch341::setState(UInt32 state, UInt32 mask, void *refCon)
 {
     PortInfo_t *port = (PortInfo_t *) refCon;
     IOReturn	ret;
-    DEBUG_IOLog(4,"%s(%p)::setState state %u mask %u\n", getName(), this, state, mask);
+    DEBUG_IOLog(4,"%s(%p)::setState state 0x%x mask 0x%x\n", getName(), this, state, mask);
     
-    return kIOReturnIOError; // ----
 	// Cannot acquire or activate via setState
     
     if (mask & (PD_S_ACQUIRED | PD_S_ACTIVE | (~EXTERNAL_MASK)))
@@ -1587,7 +1578,7 @@ IOReturn osx_wch_driver_ch341::setState(UInt32 state, UInt32 mask, void *refCon)
 	if (port->lineState & CH341_BIT_DSR) state |= PD_RS232_S_DSR; else state &= ~( PD_RS232_S_DSR );
 	if (port->lineState & CH341_BIT_RI)  state |= PD_RS232_S_RI; else state &= ~( PD_RS232_S_RI );
 	if (port->lineState & CH341_BIT_DCD) state |= PD_RS232_S_CAR; else state &= ~( PD_RS232_S_CAR );
-    DEBUG_IOLog(5,"%s(%p)::setState linestatestate %u mask %u state %u\n", getName(), this, port->lineState, mask, state);
+    DEBUG_IOLog(5,"%s(%p)::setState linestatestate 0x%x mask 0x%x state 0x%x\n", getName(), this, port->lineState, mask, state);
 
 	if (mask)
 	{
@@ -1612,8 +1603,7 @@ IOReturn osx_wch_driver_ch341::setState(UInt32 state, UInt32 mask, void *refCon)
 
 IOReturn osx_wch_driver_ch341::setStateAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *)
 {
-    DEBUG_IOLog(4,"osx_wch_driver_ch341::setStateAction\n");
-  
+    
     return ((osx_wch_driver_ch341 *)owner)->setStateGated((UInt32)(uintptr_t)arg0, (UInt32)(uintptr_t)arg1, (void *)arg2);
 
 }/* end setStateAction */
@@ -1649,7 +1639,7 @@ IOReturn osx_wch_driver_ch341::setStateGated( UInt32 state, UInt32 mask, void *r
 	{
 	    // ignore any bits that are read-only
 		mask &= (~port->FlowControl & PD_RS232_A_MASK) | PD_S_MASK;
-		DEBUG_IOLog(5,"%s(%p)::setStateGated mask: %u state %u ", getName(), this,mask, state);
+//		DEBUG_IOLog(5,"%s(%p)::setStateGated mask: %u state %u \n", getName(), this,mask, state);
 		
 		if ( mask)
 			changeState( port, state, mask );
@@ -1679,9 +1669,6 @@ IOReturn osx_wch_driver_ch341::setStateGated( UInt32 state, UInt32 mask, void *r
 IOReturn osx_wch_driver_ch341::watchState(UInt32 *state, UInt32 mask, void *refCon)
 {
     IOReturn 	ret;
-    DEBUG_IOLog(4,"%s(%p)::watchState state %u mask  %u\n", getName(), this, *state, mask);
-    
-    return kIOReturnIOError; // ----
     if (!state) 
         return kIOReturnBadArgument;
 	
@@ -1705,8 +1692,7 @@ IOReturn osx_wch_driver_ch341::watchState(UInt32 *state, UInt32 mask, void *refC
 
 IOReturn osx_wch_driver_ch341::watchStateAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
 {
-    DEBUG_IOLog(4,"osx_wch_driver_ch341::watchStateAction\n");
-
+   
     return ((osx_wch_driver_ch341 *)owner)->watchStateGated((UInt32 *)arg0, (UInt32)(uintptr_t)arg1);
 
 }/* end watchStateAction */
@@ -1758,9 +1744,9 @@ IOReturn osx_wch_driver_ch341::watchStateGated( UInt32 *state, UInt32 mask)
 
 UInt32 osx_wch_driver_ch341::nextEvent( void *refCon )
 {
-    DEBUG_IOLog(4,"%s(%p)::nextEvent\n", getName(), this);
+//    DEBUG_IOLog(4,"%s(%p)::nextEvent\n", getName(), this);
     
-    return kIOReturnIOError; // ----
+
 #if FIX_PARITY_PROCESSING
     UInt8 t = 0;
     UInt32 qret = peekBytefromQueue( &fPort->RX, &t, 1);
@@ -1780,7 +1766,7 @@ UInt32 osx_wch_driver_ch341::nextEvent( void *refCon )
     }
 #endif
 
-    DEBUG_IOLog(5,"%s(%p)::nextEvent PD_E_EOQ\n", getName(), this);
+//    DEBUG_IOLog(5,"%s(%p)::nextEvent PD_E_EOQ\n", getName(), this);
     return PD_E_EOQ;
     
 }/* end nextEvent */
@@ -1803,9 +1789,7 @@ UInt32 osx_wch_driver_ch341::nextEvent( void *refCon )
 IOReturn osx_wch_driver_ch341::executeEvent(UInt32 event, UInt32 data, void *refCon)
 {
     IOReturn 	ret;
-	DEBUG_IOLog(4,"%s(%p)::executeEventAction\n", getName(), this);
-    
-    return kIOReturnIOError; // ----
+
     retain();
     ret = fCommandGate->runAction(executeEventAction, (void *)(uintptr_t)event, (void *)(uintptr_t)data, (void *)refCon);
     release();
@@ -1824,7 +1808,6 @@ IOReturn osx_wch_driver_ch341::executeEvent(UInt32 event, UInt32 data, void *ref
 
 IOReturn osx_wch_driver_ch341::executeEventAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *)
 {
-	DEBUG_IOLog(4,"osx_wch_driver_ch341::executeEventAction\n");
 
    return ((osx_wch_driver_ch341 *)owner)->executeEventGated((UInt32)(uintptr_t)arg0, (UInt32)(uintptr_t)arg1, (void *)arg2);
 }/* end executeEventAction */
@@ -2186,9 +2169,6 @@ IOReturn osx_wch_driver_ch341::requestEvent(UInt32 event, UInt32 *data, void *re
 {
     IOReturn 	ret;
     
-	DEBUG_IOLog(4,"%s(%p)::requestEvent\n", getName(), this);
-    
-    return kIOReturnIOError; // ----
     retain();
     ret = fCommandGate->runAction(requestEventAction, (void *)(uintptr_t)event, (void *)data, (void *)refCon);
     release();
@@ -2207,7 +2187,6 @@ IOReturn osx_wch_driver_ch341::requestEvent(UInt32 event, UInt32 *data, void *re
 
 IOReturn osx_wch_driver_ch341::requestEventAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *)
 {
-	DEBUG_IOLog(4,"osx_wch_driver_ch341::requestEventAction\n");
 
     return ((osx_wch_driver_ch341 *)owner)->requestEventGated((UInt32)(uintptr_t)arg0, (UInt32 *)arg1, (void *)arg2);
 }/* end requestEventAction */
@@ -2399,7 +2378,6 @@ IOReturn osx_wch_driver_ch341::enqueueEvent( UInt32 event, UInt32 data, bool sle
     IOReturn    ret = kIOReturnSuccess;
     UInt32      state, delta;
     
-    return kIOReturnIOError; // ----
     delta = 0;
     state = readPortState( port );  
 
@@ -2465,7 +2443,6 @@ IOReturn osx_wch_driver_ch341::dequeueEvent( UInt32 *event, UInt32 *data, bool s
 {
 	DEBUG_IOLog(4,"%s(%p)::dequeueEvent\n", getName(), this);
     
-    return kIOReturnIOError; // ----
     PortInfo_t *port = (PortInfo_t *) refCon;
     	
     if ( (event == NULL) || (data == NULL) )
@@ -2527,7 +2504,6 @@ IOReturn osx_wch_driver_ch341::enqueueData(UInt8 *buffer, UInt32 size, UInt32 *c
 {
     IOReturn 	ret;
     
-    return kIOReturnIOError; // ----
     if (count == NULL || buffer == NULL)
         return kIOReturnBadArgument;
 	
@@ -2673,7 +2649,6 @@ IOReturn osx_wch_driver_ch341::dequeueData(UInt8 *buffer, UInt32 size, UInt32 *c
     IOReturn 	ret;
 	DEBUG_IOLog(4,"%s(%p)::dequeueData\n", getName(), this);
     
-    return kIOReturnIOError; // ----
     if ((count == NULL) || (buffer == NULL) || (min > size))
         return kIOReturnBadArgument;
 	
@@ -3354,7 +3329,7 @@ QueueStatus osx_wch_driver_ch341::addBytetoQueue( CirQueue *Queue, char Value )
     DEBUG_IOLog(4,"osx_wch_driver_ch341(%p)::AddBytetoQueue\n", this );
 	
     if ( !(fPort && fPort->serialRequestLock ) ) goto Fail;
-	DEBUG_IOLog(2,"osx_wch_driver_ch341::addBytetoQueue IOLockLock( port->serialRequestLock );\n" );
+//	DEBUG_IOLog(2,"osx_wch_driver_ch341::addBytetoQueue IOLockLock( port->serialRequestLock );\n" );
 	
     IOLockLock( fPort->serialRequestLock );
 	
@@ -3400,7 +3375,7 @@ QueueStatus osx_wch_driver_ch341::getBytetoQueue( CirQueue *Queue, UInt8 *Value 
     DEBUG_IOLog(4,"%s(%p)::GetBytetoQueue\n", getName(), this );
 	
     if( !(fPort && fPort->serialRequestLock) ) goto Fail;
-	DEBUG_IOLog(2,"osx_wch_driver_ch341::getBytetoQueue IOLockLock( port->serialRequestLock ); \n" );
+//	DEBUG_IOLog(2,"osx_wch_driver_ch341::getBytetoQueue IOLockLock( port->serialRequestLock ); \n" );
 
     IOLockLock( fPort->serialRequestLock );
 	
@@ -3645,17 +3620,18 @@ size_t osx_wch_driver_ch341::removefromQueue( CirQueue *Queue, UInt8 *Buffer, si
 size_t osx_wch_driver_ch341::freeSpaceinQueue( CirQueue *Queue )
 {
     size_t  retVal = 0;
-    DEBUG_IOLog(6,"%s(%p)::FreeSpaceinQueue\n", getName(), this );
+//    DEBUG_IOLog(6,"%s(%p)::FreeSpaceinQueue\n", getName(), this );
 	
     if( !(fPort && fPort->serialRequestLock ) ) goto Fail;
-	DEBUG_IOLog(6,"osx_wch_driver_ch341::freeSpaceinQueue IOLockLock( port->serialRequestLock );\n");
+//	DEBUG_IOLog(6,"osx_wch_driver_ch341::freeSpaceinQueue IOLockLock( port->serialRequestLock );\n");
 
 	IOLockLock( fPort->serialRequestLock );
 	
     retVal = Queue->Size - Queue->InQueue;
- 	DEBUG_IOLog(6,"osx_wch_driver_ch341::freeSpaceinQueue IOLockUnLock( port->serialRequestLock );\n");
+// 	DEBUG_IOLog(6,"osx_wch_driver_ch341::freeSpaceinQueue IOLockUnLock( port->serialRequestLock );\n");
    
     IOLockUnlock(fPort->serialRequestLock);
+    DEBUG_IOLog(6,"%s(%p)::FreeSpaceinQueue=%lu\n", getName(), this , retVal);
     
 Fail:
 		return retVal;
@@ -3676,7 +3652,7 @@ Fail:
 
 size_t osx_wch_driver_ch341::usedSpaceinQueue( CirQueue *Queue )
 {
-    DEBUG_IOLog(6,"%s(%p)::UsedSpaceinQueue\n", getName(), this );
+    DEBUG_IOLog(6,"%s(%p)::UsedSpaceinQueue=%lu\n", getName(), this, Queue->InQueue );
 
     return Queue->InQueue;
     

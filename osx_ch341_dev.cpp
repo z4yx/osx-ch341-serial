@@ -67,8 +67,8 @@ IOReturn osx_wch_driver_ch341::ch341_control_in(UInt8 req, UInt16 value, UInt16 
 bool osx_wch_driver_ch341::startSerial()
 {
     const unsigned int startSerial_buf_size = 8;
-    char * buf;
-    DEBUG_IOLog(1,"%s(%p)::startSerial \n", getName(), this);
+    uint8_t * buf;
+    DEBUG_IOLog(1,"%s(%p)::startSerial ------- \n", getName(), this);
     
     
     
@@ -99,24 +99,28 @@ bool osx_wch_driver_ch341::startSerial()
     }
     
     
-    buf = (char *) IOMalloc(startSerial_buf_size);
+    buf = (uint8_t *) IOMalloc(startSerial_buf_size);
     if (!buf) {
         IOLog("%s(%p)::startSerial could not alloc memory for buf\n", getName(), this);
         goto	Fail;
     }
     
     ch341_control_in(0x5f, 0, 0,buf,startSerial_buf_size);
-    DEBUG_IOLog(5, "Got two bytes 0x%x 0x%x\n",buf[0],buf[1]);
+    DEBUG_IOLog(5, "Got two bytes 0x%x 0x%x\n",(uint32_t)buf[0],(uint32_t)buf[1]);  /* expect two bytes 0x27 0x00 */
+
     ch341_control_out (0xa1, 0, 0);
     ch341_set_baudrate(DEFAULT_BAUD_RATE);
+    
     ch341_control_in(0x95, 0x2518, 0,buf,startSerial_buf_size);
-    DEBUG_IOLog(5, "Got two bytes 0x%x 0x%x\n",buf[0],buf[1]);
+    DEBUG_IOLog(5, "Got two bytes 0x%x 0x%x\n",(uint32_t)buf[0],(uint32_t)buf[1]); /* expect two bytes 0x56 0x00 */
+    
     ch341_control_out (0x9a, 0x2518, 0x0050);
-    ch341_get_status(fPort);
+    ch341_get_status(fPort);   /* expect 0xff 0xee */
+    
     ch341_control_out (0xa1, 0x501f, 0xd90a);
     ch341_set_baudrate(DEFAULT_BAUD_RATE);
     ch341_set_handshake(fPort->LineControl);
-    ch341_get_status(fPort);
+    ch341_get_status(fPort);  /* expect 0x9f 0xee */
     
     IOFree(buf, startSerial_buf_size);
     
@@ -203,6 +207,8 @@ IOReturn osx_wch_driver_ch341::ch341_set_baudrate(UInt32 baud_rate)
     UInt32 factor;
     short divisor;
     
+    IOLog("%s(%p)::ch341_set_baudrate %d\n", getName(), this, baud_rate);
+    
     if (!baud_rate)
         return kIOReturnInvalid;
     factor = (CH341_BAUDBASE_FACTOR / baud_rate);
@@ -230,14 +236,14 @@ IOReturn osx_wch_driver_ch341::ch341_set_baudrate(UInt32 baud_rate)
 IOReturn osx_wch_driver_ch341::ch341_get_status(PortInfo_t *port)
 {
     UInt32 done;
-    char *buf = (char *) IOMalloc(8);
+    uint8_t *buf = (uint8_t *) IOMalloc(8);
     if (!buf) {
         IOLog("%s(%p)::ch341_get_status could not alloc memory for buf\n", getName(), this);
         return kIOReturnNoMemory;
     }
     IOReturn rtn = ch341_control_in(0x95, 0x0706, 0, buf, 8, &done);
     if(done == 2){
-        IOLog("%s(%p)::ch341_get_status two bytes: 0x%x 0x%x\n", getName(), this, buf[0], buf[1]);
+        IOLog("%s(%p)::ch341_get_status two bytes: 0x%x 0x%x\n", getName(), this, (uint32_t)buf[0], (uint32_t)buf[1]);
         port->lineState = (~(*buf)) & CH341_BITS_MODEM_STAT;
     }
     IOFree(buf, 8);
@@ -246,5 +252,6 @@ IOReturn osx_wch_driver_ch341::ch341_get_status(PortInfo_t *port)
 
 IOReturn osx_wch_driver_ch341::ch341_set_handshake(UInt8 control)
 {
+    IOLog("%s(%p)::ch341_set_handshake %d\n", getName(), this, (UInt32)control);
     return ch341_control_out(0xa4, ~control, 0);
 }
