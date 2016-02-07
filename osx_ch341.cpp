@@ -1,7 +1,7 @@
 /*
- * osx_pl2303.cpp Prolific PL2303 USB to serial adaptor driver for OS X
+ * osx_ch341.cpp Winchiphead CH341 USB to serial adaptor driver for OS X
  *
- * Copyright (c) 2006 BJA Electronics, Jeroen Arnoldus (opensource@bja-electronics.nl)
+ * Copyright 2015, YuXiang Zhang <zz593141477@gmail.com>
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -18,37 +18,19 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  * Driver is inspired by the following projects:
- * - Linux kernel PL2303.c Copyright (C) 2001-2004 Greg Kroah-Hartman (greg@kroah.com)
- *                         Copyright (C) 2003 IBM Corp.
- * - Apple16x50Serial Copyright (c) 1997-2003 Apple Computer, Inc. All rights reserved.
- *                    Copyright (c) 1994-1996 NeXT Software, Inc.  All rights reserved.
- * - AppleRS232Serial Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
- * - AppleUSBIrda Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
- *
- *
- *
- * Tests:
- * - Driver only tested with ATEN UC-RS232A, but should support other PL2303 based USB to RS232 converters
- * - Handshake signals
- *
- * Todo:
- * - Implementation Powermanagement
- * - Fix USBF: Could not open device: Strange error message
- *
- *
- *
- * http://www.usb.org/developers/devclass_docs/usbcdc11.pdf
+ * - osx-pl2303            Copyright (c) 2006 BJA Electronics, Jeroen Arnoldus (opensource@bja-electronics.nl)
+ * - Linux kernel ch341.c  Copyright 2007, Frank A Kingswood <frank@kingswood-consulting.co.uk>
+ *                         Copyright 2007, Werner Cornelius <werner@cornelius-consult.de>
+ *                         Copyright 2009, Boris Hajduk <boris@hajduk.org>
  */
 
-
-#define FIX_PARITY_PROCESSING 1
  
 #include <IOKit/IOLib.h>
 #include <IOKit/IOTypes.h>
 #include <IOKit/IOMessage.h>
 
 
-#include "osx_pl2303.h"
+#include "osx_ch341.h"
 #include <IOKit/serial/IOSerialKeys.h>
 #include <IOKit/usb/IOUSBInterface.h>
 #include <IOKit/usb/IOUSBLog.h>
@@ -59,28 +41,8 @@ extern "C" {
 #include <pexpert/pexpert.h>
 }
 
-//To enable logging remove comments from #define DEBUG and #define DATALOG
-//Use USB Prober to monitor the logs.
-//#define DEBUG
-//#define DATALOG
 
-#ifdef DEBUG
-#define DEBUG_IOLog(args...) USBLog (args)
-#else
-#define DEBUG_IOLog(args...)
-#endif
-
-
-#ifdef DATALOG
-#define DATA_IOLog(args...)	USBLog (args)
-#else
-#define DATA_IOLog(args...)
-#endif
-
-
-#define super IOSerialDriverSync
-
-OSDefineMetaClassAndStructors(nl_bjaelectronics_driver_PL2303, IOSerialDriverSync)
+OSDefineMetaClassAndStructors(osx_wch_driver_ch341, IOSerialDriverSync)
 
 
 /****************************************************************************************************/
@@ -104,23 +66,23 @@ static UInt8 Asciify(UInt8 i)
     
 }/* end Asciify */
 
-bool nl_bjaelectronics_driver_PL2303::init(OSDictionary *dict)
+bool osx_wch_driver_ch341::init(OSDictionary *dict)
 {
 	bool res = super::init(dict);
 	DEBUG_IOLog(4,"%s(%p)::Initializing\n", getName(), this);
 	return res;
 }
 
-void nl_bjaelectronics_driver_PL2303::free(void)
+void osx_wch_driver_ch341::free(void)
 {
 	DEBUG_IOLog(4,"%s(%p)::Freeing\n", getName(), this);
 	super::free();
 }
 
-IOService *nl_bjaelectronics_driver_PL2303::probe(IOService *provider, SInt32 *score)
+IOService *osx_wch_driver_ch341::probe(IOService *provider, SInt32 *score)
 {
 	IOUSBDevice		*Provider;
-	DEBUG_IOLog(4,",%s(%p)::Probe\n", getName(), this);
+	DEBUG_IOLog(4,"%s(%p)::Probe\n", getName(), this);
 	Provider = OSDynamicCast(IOUSBDevice, provider);   
 	 if (!Provider) {
         IOLog("%s(%p)::Probe Attached to non-IOUSBDevice provider!  Failing probe()\n", getName(), this);
@@ -132,11 +94,8 @@ IOService *nl_bjaelectronics_driver_PL2303::probe(IOService *provider, SInt32 *s
 }
 
 
-bool nl_bjaelectronics_driver_PL2303::start(IOService *provider)
+bool osx_wch_driver_ch341::start(IOService *provider)
 {
-    enum pl2303_type type = type_1;
-  
-    OSNumber *release;
 
     fTerminate = false;     // Make sure we don't think we're being terminated
     fPort = NULL;
@@ -158,7 +117,7 @@ bool nl_bjaelectronics_driver_PL2303::start(IOService *provider)
     fReadActive = false;
 	fWriteActive = false;
 	
-    DEBUG_IOLog(4,"%s(%p)::start PL2303 Driver\n", getName(), this);
+    DEBUG_IOLog(4,"%s(%p)::start Driver\n", getName(), this);
 	
     if( !super::start( provider ) )
 	{
@@ -215,29 +174,6 @@ bool nl_bjaelectronics_driver_PL2303::start(IOService *provider)
 	
     fCommandGate->enable();	
 
-   release = (OSNumber *) fpDevice->getProperty(kUSBDeviceReleaseNumber);
-
-	DEBUG_IOLog(1,"%s(%p)::start - Get device version: %p \n", getName(), this, release->unsigned16BitValue() );
-	
-	if (release->unsigned16BitValue()==PROLIFIC_REV_H) {
-		DEBUG_IOLog(1,"%s(%p)::start - Chip type: H \n" );
-		type = type_1; // was rev_H
-	} else if ( release->unsigned16BitValue()==PROLIFIC_REV_X ) {
-		DEBUG_IOLog(1,"%s(%p)::start - Chip type: X \n" );
-		type = rev_HX; // was rev_X
-	} else if ( release->unsigned16BitValue()==PROLIFIC_REV_HX_CHIP_D ) {
-		DEBUG_IOLog(1,"%s(%p)::start - Chip type: HX \n" );
-		type = rev_HX;
-	} else if ( release->unsigned16BitValue()==PROLIFIC_REV_1 ) {
-		DEBUG_IOLog(1,"%s(%p)::start - Chip type: 1 \n" );
-		type = type_1;
-	} else {
-		DEBUG_IOLog(1,"%s(%p)::start - Chip type: unkwown \n" );
-		type = unknown;
-	}
-
-	
-    fPort->type = type;
 
 	fUSBStarted = true;  
 	
@@ -254,6 +190,10 @@ Fail:
 	}
     if (fCommandGate)
     {
+        if(fWorkLoop){
+            DEBUG_IOLog(1,"%s(%p)::start - removeEventSource\n", getName(), this);
+            fWorkLoop->removeEventSource(fCommandGate);
+        }
         fCommandGate->release();
         fCommandGate = NULL;
     }
@@ -271,7 +211,7 @@ Fail:
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::stop
+//      Method:     osx_wch_driver_ch341::stop
 //
 //      Inputs:     provider - my provider
 //
@@ -281,7 +221,7 @@ Fail:
 //
 /****************************************************************************************************/
 
-void nl_bjaelectronics_driver_PL2303::stop( IOService *provider )
+void osx_wch_driver_ch341::stop( IOService *provider )
 {
 
 
@@ -292,6 +232,10 @@ void nl_bjaelectronics_driver_PL2303::stop( IOService *provider )
     
     if (fCommandGate)
     {
+        if(fWorkLoop){
+            DEBUG_IOLog(1,"%s(%p)::stop - removeEventSource\n", getName(), this);
+            fWorkLoop->removeEventSource(fCommandGate);
+        }
         fCommandGate->release();
         fCommandGate = NULL;
 		DEBUG_IOLog(5,"%s(%p)::stop Command gate destroyed\n", getName(), this);
@@ -325,30 +269,7 @@ void nl_bjaelectronics_driver_PL2303::stop( IOService *provider )
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::getWorkLoop
-//
-//		Inputs:	
-//
-//		Outputs:	
-//
-//		Desc:		create our own workloop if we don't have one already.
-//
-/****************************************************************************************************/
-IOWorkLoop* nl_bjaelectronics_driver_PL2303::getWorkLoop() const
-{
-    IOWorkLoop *w;
-    DEBUG_IOLog(4,"%s(%p)::getWorkLoop\n", getName(), this);
-    
-    if (fWorkLoop) w = fWorkLoop;
-		else  w = IOWorkLoop::workLoop();
-    
-    return w;
-    
-}/* end getWorkLoop */
-
-/****************************************************************************************************/
-//
-//      Method:     nl_bjaelectronics_driver_PL2303::privateWatchState
+//      Method:     osx_wch_driver_ch341::privateWatchState
 //
 //      Inputs:     port - the specified port, state - state watching for, mask - state mask (the specific bits)
 //
@@ -363,7 +284,7 @@ IOWorkLoop* nl_bjaelectronics_driver_PL2303::getWorkLoop() const
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::privateWatchState( PortInfo_t *port, UInt32 *state, UInt32 mask )
+IOReturn osx_wch_driver_ch341::privateWatchState( PortInfo_t *port, UInt32 *state, UInt32 mask )
 {
     unsigned            watchState, foundStates;
     bool                autoActiveBit   = false;
@@ -388,10 +309,10 @@ IOReturn nl_bjaelectronics_driver_PL2303::privateWatchState( PortInfo_t *port, U
     {
 	    // Check port state for any interesting bits with watchState value
 	    // NB. the '^ ~' is a XNOR and tests for equality of bits.
-		DEBUG_IOLog(4,"%s(%p)::privateWatchState :watchState %p port->State %p mask %p\n", getName(), this, watchState,port->State,mask );
+		DEBUG_IOLog(4,"%s(%p)::privateWatchState :watchState %u port->State %u mask %u\n", getName(), this, watchState,port->State,mask );
 
 		foundStates = (watchState ^ ~port->State) & mask;
-		DEBUG_IOLog(4,"%s(%p)::privateWatchState :foundStates %p \n", getName(), this, foundStates );
+		DEBUG_IOLog(4,"%s(%p)::privateWatchState :foundStates %u \n", getName(), this, foundStates );
 
 		if ( foundStates )
 		{
@@ -443,7 +364,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::privateWatchState( PortInfo_t *port, U
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::allocateResources
+//      Method:     osx_wch_driver_ch341::allocateResources
 //
 //      Inputs:     
 //
@@ -453,7 +374,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::privateWatchState( PortInfo_t *port, U
 //
 /****************************************************************************************************/
 
-bool nl_bjaelectronics_driver_PL2303::allocateResources( void )
+bool osx_wch_driver_ch341::allocateResources( void )
 {
     IOUSBFindEndpointRequest    epReq;      // endPoint request struct on stack
     bool                        goodCall;   // return flag fm Interface call
@@ -504,10 +425,6 @@ bool nl_bjaelectronics_driver_PL2303::allocateResources( void )
 	
     // Allocate Memory Descriptor Pointer with memory for the interrupt-in pipe:
 	aBuffSize = INTERRUPT_BUFF_SIZE;
-	if ( (fpDevice->GetVendorID() == SIEMENS_VENDOR_ID ) && (fpDevice->GetProductID() == SIEMENS_PRODUCT_ID_X65) ) {
-				aBuffSize = 1;
-				DEBUG_IOLog( 3, "%s(%p)::allocateResources interrupt Buff size = 1\n", getName(), this);
-			}	
     fpinterruptPipeMDP = IOBufferMemoryDescriptor::withCapacity( aBuffSize, kIODirectionIn );
 	if (!fpinterruptPipeMDP) {
 	    IOLog("%s(%p)::allocateResources failed - no fpinterruptPipeMDP.\n", getName(), this);
@@ -570,7 +487,7 @@ Fail:
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::releaseResources
+//      Method:     osx_wch_driver_ch341::releaseResources
 //
 //      Inputs:     port - the Port
 //
@@ -580,9 +497,9 @@ Fail:
 //
 /****************************************************************************************************/
 
-void nl_bjaelectronics_driver_PL2303::releaseResources( void )
+void osx_wch_driver_ch341::releaseResources( void )
 {
-    DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::releaseResources\n");
+    DEBUG_IOLog(4,"osx_wch_driver_ch341::releaseResources\n");
     
     if ( fpInterface ) { 
 		fpInterface->close( this ); 
@@ -608,114 +525,7 @@ void nl_bjaelectronics_driver_PL2303::releaseResources( void )
 }/* end releaseResources */
 
 
-
-//
-// startSerial
-//
-// assumes createSerialStream is called once at usb start time
-// calls allocateResources to open endpoints
-//
-bool nl_bjaelectronics_driver_PL2303::startSerial()
-{
-	IOUSBDevRequest request;
-	char * buf;	
-	IOReturn rtn;
-	DEBUG_IOLog(1,"%s(%p)::startSerial \n", getName(), this);
-	
-		
-	
-	/* Ugly hack to make device clean */
-	DEBUG_IOLog(5,"%s(%p)::startSerial RESET DEVICE \n", getName(), this);
-	fUSBStarted = false; 
-	DEBUG_IOLog(5,"%s(%p)::startSerial close device-1\n", getName(), this);	
-	if(fpDevice) { fpDevice->close( fpDevice ); }
-	DEBUG_IOLog(5,"%s(%p)::startSerial reset device-1 \n", getName(), this);
-	if(fpDevice) { fpDevice->ResetDevice(); }
-	int i;
-	i = 0;
-	while (!fUSBStarted & (i < 10)) {	IOSleep(10); i++; }
-	DEBUG_IOLog(5,"%s(%p)::startSerial close device-2 timout: %d \n", getName(), this, i);
-	if(fpDevice) { fpDevice->close( fpDevice ); }
-	DEBUG_IOLog(5,"%s(%p)::startSerial reset device-2 \n", getName(), this);
-	if(fpDevice) { fpDevice->ResetDevice(); } 
-	/*    ****************************     */
-		
-
-    if (!fNub) {
-		IOLog("%s(%p)::startSerial fNub not available\n", getName(), this);
-		goto	Fail;
-	}
-	
-	buf = (char *) IOMalloc(10);
-    if (!buf) {
-		IOLog("%s(%p)::startSerial could not alloc memory for buf\n", getName(), this);
-		goto	Fail;
-	}
-
-
-
-    // make chip as sane as can be
-#define FISH(a,b,c,d)								\
-	request.bmRequestType = a; \
-    request.bRequest = b; \
-	request.wValue =  c; \
-	request.wIndex = d; \
-	request.wLength = 1; \
-	request.pData = buf; \
-	rtn =  fpDevice->DeviceRequest(&request); \
-	DEBUG_IOLog(5,"%s(%p)::startSerial FISH 0x%x:0x%x:0x%x:0x%x  %d - %x\n", getName(), this,a,b,c,d,rtn,buf[0]);
-
-#define SOUP(a,b,c,d)								\
-	request.bmRequestType = a; \
-    request.bRequest = b; \
-	request.wValue =  c; \
-	request.wIndex = d; \
-	request.wLength = 0; \
-	request.pData = NULL; \
-	rtn =  fpDevice->DeviceRequest(&request); \
-	DEBUG_IOLog(5,"%s(%p)::startSerial SOUP 0x%x:0x%x:0x%x:0x%x  %d\n", getName(), this,a,b,c,d,rtn);
-
-
-	FISH (VENDOR_READ_REQUEST_TYPE, VENDOR_READ_REQUEST, 0x8484, 0);
-	SOUP (VENDOR_WRITE_REQUEST_TYPE, VENDOR_WRITE_REQUEST, 0x0404, 0);
-	FISH (VENDOR_READ_REQUEST_TYPE, VENDOR_READ_REQUEST, 0x8484, 0);
-	FISH (VENDOR_READ_REQUEST_TYPE, VENDOR_READ_REQUEST, 0x8383, 0);
-	FISH (VENDOR_READ_REQUEST_TYPE, VENDOR_READ_REQUEST, 0x8484, 0);
-	SOUP (VENDOR_WRITE_REQUEST_TYPE, VENDOR_WRITE_REQUEST, 0x0404, 1);
-	FISH (VENDOR_READ_REQUEST_TYPE, VENDOR_READ_REQUEST, 0x8484, 0);
-	FISH (VENDOR_READ_REQUEST_TYPE, VENDOR_READ_REQUEST, 0x8383, 0);
-//	FISH (VENDOR_WRITE_REQUEST_TYPE, VENDOR_WRITE_REQUEST, 0x81, 1);
-	SOUP (VENDOR_WRITE_REQUEST_TYPE, VENDOR_WRITE_REQUEST, 0, 1);
-	SOUP (VENDOR_WRITE_REQUEST_TYPE, VENDOR_WRITE_REQUEST, 1, 0);
-
-	if (fPort->type == rev_HX) { 
-		/* HX chip */
-		SOUP (VENDOR_WRITE_REQUEST_TYPE, VENDOR_WRITE_REQUEST, 2, 0x44); 
-		/* reset upstream data pipes */
-        	SOUP (VENDOR_WRITE_REQUEST_TYPE, VENDOR_WRITE_REQUEST, 8, 0);
-        	SOUP (VENDOR_WRITE_REQUEST_TYPE, VENDOR_WRITE_REQUEST, 9, 0);
-	} else {
-		SOUP (VENDOR_WRITE_REQUEST_TYPE, VENDOR_WRITE_REQUEST, 2, 0x24);
-	}
-	
-    IOFree(buf, 10); 
-	
-	// open the pipe endpoints
-	if (!allocateResources() ) {
-		IOLog("%s(%p)::start Allocate resources failed\n", getName(), this);
-		goto	Fail;
-	}
-	
-    
-    startPipes();                           // start reading on the usb pipes
-
-    return true;
-	
-Fail:
-		return false;
-}
-
-void nl_bjaelectronics_driver_PL2303::stopSerial( bool resetDevice )
+void osx_wch_driver_ch341::stopSerial( bool resetDevice )
 {
 
 	DEBUG_IOLog(1,"%s(%p)::stopSerial\n", getName(), this);
@@ -736,7 +546,7 @@ Fail:
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::CheckSerialState
+//      Method:     osx_wch_driver_ch341::CheckSerialState
 //
 //      Inputs:     open session count (fSessions)
 //                  usb start/stop (fStartStopUSB) -- replace with fTerminate?
@@ -747,7 +557,7 @@ Fail:
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::CheckSerialState( void )
+IOReturn osx_wch_driver_ch341::CheckSerialState( void )
 {
     Boolean     newState = fUSBStarted &    // usb must have started, and 
 //			(fPowerState == kIrDAPowerOnState) &   // powered on by the power manager, and
@@ -779,7 +589,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::CheckSerialState( void )
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::configureDevice
+//      Method:     osx_wch_driver_ch341::configureDevice
 //
 //      Inputs:     numconfigs - number of configurations present
 //
@@ -789,7 +599,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::CheckSerialState( void )
 //
 /****************************************************************************************************/
 
-bool nl_bjaelectronics_driver_PL2303::configureDevice( UInt8 numConfigs )
+bool osx_wch_driver_ch341::configureDevice( UInt8 numConfigs )
 {
     IOUSBFindInterfaceRequest           req;            // device request Class on stack
     const IOUSBConfigurationDescriptor  *cd = NULL;     // configuration descriptor
@@ -834,7 +644,7 @@ bool nl_bjaelectronics_driver_PL2303::configureDevice( UInt8 numConfigs )
 			}
 		}
     }
-	
+
     if ( !cd )
     {
 		goto Fail;
@@ -873,6 +683,7 @@ bool nl_bjaelectronics_driver_PL2303::configureDevice( UInt8 numConfigs )
 	} else {
 		DEBUG_IOLog(5,"%s(%p)::configureDevice Interface found\n", getName(), this);
 	}
+    IOLog("%s(%p)::configureDevice OK, fpInterface:%p\n", getName(), this, fpInterface);
 	
     fpInterface->retain();      // release done in stop()
     
@@ -885,7 +696,7 @@ Fail:
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::createNub
+//      Method:     osx_wch_driver_ch341::createNub
 //
 //      Inputs:
 //
@@ -895,7 +706,7 @@ Fail:
 //              create serial stream finishes the job later.
 //
 /****************************************************************************************************/
-bool nl_bjaelectronics_driver_PL2303::createNub(void)
+bool osx_wch_driver_ch341::createNub(void)
 {
     DEBUG_IOLog(4,"%s(%p)::createNub\n", getName(), this);
 
@@ -925,7 +736,7 @@ Fail:
     return false;
 }
 
-void nl_bjaelectronics_driver_PL2303::destroyNub()
+void osx_wch_driver_ch341::destroyNub()
 {
 	DEBUG_IOLog(4,"%s(%p)::destroyNub Try to destroy nub\n", getName(), this);
     if (fPort != NULL) {
@@ -945,7 +756,7 @@ void nl_bjaelectronics_driver_PL2303::destroyNub()
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::createSuffix
+//      Method:     osx_wch_driver_ch341::createSuffix
 //
 //      Inputs:     None
 //
@@ -960,7 +771,7 @@ void nl_bjaelectronics_driver_PL2303::destroyNub()
 //
 /****************************************************************************************************/
 
-bool nl_bjaelectronics_driver_PL2303::createSuffix( unsigned char *sufKey )
+bool osx_wch_driver_ch341::createSuffix( unsigned char *sufKey )
 {
     
     IOReturn                rc;
@@ -974,7 +785,7 @@ bool nl_bjaelectronics_driver_PL2303::createSuffix( unsigned char *sufKey )
     DEBUG_IOLog(4,"%s(%p)::createSuffix\n", getName(), this);
 	
     indx = fpDevice->GetSerialNumberStringIndex();  
-	DEBUG_IOLog(5,"%s(%p)::createSuffix the index of string descriptor describing the device's serial number: %p\n", getName(), this, indx );
+	DEBUG_IOLog(5,"%s(%p)::createSuffix the index of string descriptor describing the device's serial number: %d\n", getName(), this, indx );
 	
     if (indx != 0 )
     {   
@@ -1003,7 +814,7 @@ bool nl_bjaelectronics_driver_PL2303::createSuffix( unsigned char *sufKey )
 		// Generate suffix key based on the location property tag
 		
 		location = (OSNumber *)fpDevice->getProperty(kUSBDevicePropertyLocationID);	
-		DEBUG_IOLog(5,"%s(%p)::createSuffix location number: %d\n", getName(), this, location );
+		DEBUG_IOLog(5,"%s(%p)::createSuffix location number: %p\n", getName(), this, location );
 		
 		if ( location )
 		{
@@ -1033,7 +844,7 @@ bool nl_bjaelectronics_driver_PL2303::createSuffix( unsigned char *sufKey )
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::SetStructureDefaults
+//      Method:     osx_wch_driver_ch341::SetStructureDefaults
 //
 //      Inputs:     port - the port to set the defaults, Init - Probe time or not
 //
@@ -1043,7 +854,7 @@ bool nl_bjaelectronics_driver_PL2303::createSuffix( unsigned char *sufKey )
 //
 /****************************************************************************************************/
 
-void nl_bjaelectronics_driver_PL2303::SetStructureDefaults( PortInfo_t *port, bool Init )
+void osx_wch_driver_ch341::SetStructureDefaults( PortInfo_t *port, bool Init )
 {
     UInt32  tmp;
     
@@ -1084,6 +895,7 @@ void nl_bjaelectronics_driver_PL2303::SetStructureDefaults( PortInfo_t *port, bo
     port->TXStats.LowWater      = port->RXStats.HighWater >> 1;
     
     port->FlowControl           = (DEFAULT_AUTO | DEFAULT_NOTIFY);
+    port->LineControl           = 0;
 
     port->FlowControlState		= CONTINUE_SEND;
     port->DCDState				= false;
@@ -1106,7 +918,7 @@ void nl_bjaelectronics_driver_PL2303::SetStructureDefaults( PortInfo_t *port, bo
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::createSerialStream
+//      Method:     osx_wch_driver_ch341::createSerialStream
 //
 //      Inputs:     None
 //
@@ -1116,7 +928,7 @@ void nl_bjaelectronics_driver_PL2303::SetStructureDefaults( PortInfo_t *port, bo
 //
 /****************************************************************************************************/
 
-bool nl_bjaelectronics_driver_PL2303::createSerialStream()
+bool osx_wch_driver_ch341::createSerialStream()
 {
     UInt8           indx;
     IOReturn            rc;
@@ -1185,7 +997,7 @@ bool nl_bjaelectronics_driver_PL2303::createSerialStream()
 // release things created in createSerialStream
 //
 void
-nl_bjaelectronics_driver_PL2303::destroySerialStream(void)
+osx_wch_driver_ch341::destroySerialStream(void)
 {
     DEBUG_IOLog(4,"%s(%p)::destroySerialStream\n", getName(), this);
 	if( !fPort ) goto Fail;
@@ -1215,7 +1027,7 @@ Fail:
 //
 // start reading on the pipes
 //
-bool nl_bjaelectronics_driver_PL2303::startPipes( void )
+bool osx_wch_driver_ch341::startPipes( void )
 {
     IOReturn                    rtn;
     DEBUG_IOLog(4,"%s(%p)::startPipes\n", getName(), this);
@@ -1251,7 +1063,7 @@ Fail:
 //
 // stop i/o on the pipes
 //
-void nl_bjaelectronics_driver_PL2303::stopPipes()
+void osx_wch_driver_ch341::stopPipes()
 {
 	DEBUG_IOLog(4,"%s(%p)::Stopping\n", getName(), this);
     if (fpInterruptPipe){    
@@ -1276,7 +1088,7 @@ void nl_bjaelectronics_driver_PL2303::stopPipes()
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::message
+//      Method:     osx_wch_driver_ch341::message
 //
 //      Inputs:     type - message type, provider - my provider, argument - additional parameters
 //
@@ -1285,20 +1097,16 @@ void nl_bjaelectronics_driver_PL2303::stopPipes()
 //      Desc:       Handles IOKit messages. 
 //
 /****************************************************************************************************/
-enum {                                  // messageType for the callback routines
-    kIrDACallBack_Status    = 0x1000,   // Status Information is coming
-    kIrDACallBack_Unplug    = 0x1001    // USB Device is unplugged
-};
 
-IOReturn nl_bjaelectronics_driver_PL2303::message( UInt32 type, IOService *provider,  void *argument)
+IOReturn osx_wch_driver_ch341::message( UInt32 type, IOService *provider,  void *argument)
 {
 IOReturn err = kIOReturnSuccess;
-    DEBUG_IOLog(4,"%s(%p)::message %p\n", getName(), this, type);
+    DEBUG_IOLog(4,"%s(%p)::message 0x%x\n", getName(), this, type);
 
 	switch ( type )
     {
 		case kIOMessageServiceIsTerminated:
-			DEBUG_IOLog(4,"%s(%p)::message - kIOMessageServiceIsTerminated sessions: %p\n", getName(), this,fSessions);
+			DEBUG_IOLog(4,"%s(%p)::message - kIOMessageServiceIsTerminated sessions: 0x%x\n", getName(), this,fSessions);
 			
 			if ( fSessions ){
 				stopSerial( false );         // stop serial now
@@ -1348,7 +1156,7 @@ IOReturn err = kIOReturnSuccess;
 			break;
 			
 		case kIOMessageServiceIsAttemptingOpen:
-			DEBUG_IOLog(4,"%s(%p)::received kIOMessageServiceIsAttemptingOpen with argument: %p \n", getName(), this, (int) argument );
+			DEBUG_IOLog(4,"%s(%p)::received kIOMessageServiceIsAttemptingOpen with argument: %p \n", getName(), this,  argument );
 			
 			break;
 			
@@ -1416,7 +1224,7 @@ Fail:
 			break;
 
 		default:
-			DEBUG_IOLog(4,"%s(%p)::message - unknown message %p \n", getName(), this, type ); 
+			DEBUG_IOLog(4,"%s(%p)::message - unknown message %u \n", getName(), this, type );
 			break;
     }
     
@@ -1426,7 +1234,7 @@ Fail:
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::readPortState
+//      Method:     osx_wch_driver_ch341::readPortState
 //
 //      Inputs:     port - the specified port
 //
@@ -1436,20 +1244,20 @@ Fail:
 //
 /****************************************************************************************************/
 
-UInt32 nl_bjaelectronics_driver_PL2303::readPortState( PortInfo_t *port )
+UInt32 osx_wch_driver_ch341::readPortState( PortInfo_t *port )
 {
     UInt32              returnState;
-	DEBUG_IOLog(6,"nl_bjaelectronics_driver_PL2303::readPortState IOLockLock( port->serialRequestLock );\n" );
+	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState IOLockLock( port->serialRequestLock );\n" );
 
     IOLockLock( port->serialRequestLock );
-	DEBUG_IOLog(6,"nl_bjaelectronics_driver_PL2303::readPortState port->State\n", returnState );
+	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState port->State=%u\n", returnState );
 
 	returnState = port->State;
-	DEBUG_IOLog(6,"nl_bjaelectronics_driver_PL2303::readPortState IOLockUnLock( port->serialRequestLock );\n" );
+	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState IOLockUnLock( port->serialRequestLock );\n" );
 
 	IOLockUnlock( port->serialRequestLock);
 	
-	DEBUG_IOLog(6,"nl_bjaelectronics_driver_PL2303::readPortState returnstate: %p \n", returnState );
+	DEBUG_IOLog(6,"osx_wch_driver_ch341::readPortState returnstate: %u \n", returnState );
 	
     return returnState;
     
@@ -1457,7 +1265,7 @@ UInt32 nl_bjaelectronics_driver_PL2303::readPortState( PortInfo_t *port )
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::changeState
+//      Method:     osx_wch_driver_ch341::changeState
 //
 //      Inputs:     port - the specified port, state - new state, mask - state mask (the specific bits)
 //
@@ -1470,23 +1278,23 @@ UInt32 nl_bjaelectronics_driver_PL2303::readPortState( PortInfo_t *port )
 //
 /****************************************************************************************************/
 
-void nl_bjaelectronics_driver_PL2303::changeState( PortInfo_t *port, UInt32 state, UInt32 mask )
+void osx_wch_driver_ch341::changeState( PortInfo_t *port, UInt32 state, UInt32 mask )
 {
     UInt32              delta;
     DEBUG_IOLog(6,"%s(%p)::changeState\n", getName(), this);
 	
-	DEBUG_IOLog(6,"nl_bjaelectronics_driver_PL2303::changeState IOLockLock( port->serialRequestLock );\n" );
+	DEBUG_IOLog(6,"osx_wch_driver_ch341::changeState IOLockLock( port->serialRequestLock );\n" );
 
 	IOLockLock( port->serialRequestLock );
 	
 
-	DEBUG_IOLog(6,"state before: %p mask %p \n",state,mask);
+	DEBUG_IOLog(6,"state before: %u mask %u \n",state,mask);
 
     state = (port->State & ~mask) | (state & mask); // compute the new state
-	DEBUG_IOLog(6,"state after: %p \n",state);
+	DEBUG_IOLog(6,"state after: %u \n",state);
 
     delta = state ^ port->State;                    // keep a copy of the diffs
-	DEBUG_IOLog(6,"state port: %p delta %p \n",port->State, delta);
+	DEBUG_IOLog(6,"state port: %u delta %u \n",port->State, delta);
 
     port->State = state;
 
@@ -1499,7 +1307,7 @@ void nl_bjaelectronics_driver_PL2303::changeState( PortInfo_t *port, UInt32 stat
 	}
 
 
-	DEBUG_IOLog(6,"nl_bjaelectronics_driver_PL2303::changeState IOLockUnLock( port->serialRequestLock );\n" );
+	DEBUG_IOLog(6,"osx_wch_driver_ch341::changeState IOLockUnLock( port->serialRequestLock );\n" );
 		
     IOLockUnlock( port->serialRequestLock );
 
@@ -1526,7 +1334,7 @@ void nl_bjaelectronics_driver_PL2303::changeState( PortInfo_t *port, UInt32 stat
 		DEBUG_IOLog(5,"setControlLines aanroepen\n");
         setControlLines( port );	
     }
-    DEBUG_IOLog(6,"%s(%p)::changeState delta: %p Port->State: %p\n", getName(), this, delta, port->State);
+    DEBUG_IOLog(6,"%s(%p)::changeState delta: %u Port->State: %u\n", getName(), this, delta, port->State);
 	
     return;
     
@@ -1535,7 +1343,7 @@ void nl_bjaelectronics_driver_PL2303::changeState( PortInfo_t *port, UInt32 stat
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::acquirePort
+//		Method:		osx_wch_driver_ch341::acquirePort
 //
 //		Inputs:		sleep - true (wait for it), false (don't)
 //				refCon - the Port (not used)
@@ -1546,10 +1354,12 @@ void nl_bjaelectronics_driver_PL2303::changeState( PortInfo_t *port, UInt32 stat
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::acquirePort(bool sleep, void *refCon)
+IOReturn osx_wch_driver_ch341::acquirePort(bool sleep, void *refCon)
 {
     IOReturn	ret;
     DEBUG_IOLog(4,"%s(%p)::acquirePort\n", getName(), this);
+    
+    return kIOReturnIOError; // ----
 
     retain();
     ret = fCommandGate->runAction(acquirePortAction, (void *)sleep, (void *)refCon);
@@ -1561,23 +1371,23 @@ IOReturn nl_bjaelectronics_driver_PL2303::acquirePort(bool sleep, void *refCon)
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::acquirePortAction
+//		Method:		osx_wch_driver_ch341::acquirePortAction
 //
 //		Desc:		Dummy pass through for acquirePortGated.
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::acquirePortAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
+IOReturn osx_wch_driver_ch341::acquirePortAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
 {
-    DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::acquirePortAction\n");
+    DEBUG_IOLog(4,"osx_wch_driver_ch341::acquirePortAction\n");
 
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->acquirePortGated((bool)arg0, (void *)arg1);
+    return ((osx_wch_driver_ch341 *)owner)->acquirePortGated((bool)arg0, (void *)arg1);
     
 }/* end acquirePortAction */
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::acquirePortGated
+//		Method:		osx_wch_driver_ch341::acquirePortGated
 //
 //		Inputs:		sleep - true (wait for it), false (don't), refCon - the Port
 //
@@ -1592,13 +1402,13 @@ IOReturn nl_bjaelectronics_driver_PL2303::acquirePortAction(OSObject *owner, voi
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::acquirePortGated( bool sleep, void *refCon )
+IOReturn osx_wch_driver_ch341::acquirePortGated( bool sleep, void *refCon )
 {
     PortInfo_t          *port = (PortInfo_t *) refCon;
     UInt32              busyState = 0;
     IOReturn            rtn = kIOReturnSuccess;
 	
-    DEBUG_IOLog(4,"%s(%p)::acquirePortGated\n", getName(), this);
+    DEBUG_IOLog(4,"%s(%p)::acquirePortGated fpInterface=%p\n", getName(), this, fpInterface);
     
     if ( fTerminate ) {
 		DEBUG_IOLog(4,"%s(%p)::acquirePortGated Port is offline\n", getName(), this);
@@ -1651,7 +1461,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::acquirePortGated( bool sleep, void *re
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::releasePort
+//		Method:		osx_wch_driver_ch341::releasePort
 //
 //		Inputs:		refCon - the Port (not used)
 //
@@ -1661,11 +1471,12 @@ IOReturn nl_bjaelectronics_driver_PL2303::acquirePortGated( bool sleep, void *re
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::releasePort(void *refCon)
+IOReturn osx_wch_driver_ch341::releasePort(void *refCon)
 {
     IOReturn	ret;
     DEBUG_IOLog(4,"%s(%p)::releasePort\n", getName(), this);
-        
+    
+    return kIOReturnIOError; // ----
     retain();
     ret = fCommandGate->runAction(releasePortAction, (void *)refCon);
     release();
@@ -1676,22 +1487,22 @@ IOReturn nl_bjaelectronics_driver_PL2303::releasePort(void *refCon)
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::releasePortAction
+//		Method:		osx_wch_driver_ch341::releasePortAction
 //
 //		Desc:		Dummy pass through for releasePortGated.
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::releasePortAction(OSObject *owner, void *arg0, void *, void *, void *)
+IOReturn osx_wch_driver_ch341::releasePortAction(OSObject *owner, void *arg0, void *, void *, void *)
 {
-    DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::releasePortAction\n");
+    DEBUG_IOLog(4,"osx_wch_driver_ch341::releasePortAction\n");
 
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->releasePortGated((void *) arg0);
+    return ((osx_wch_driver_ch341 *)owner)->releasePortGated((void *) arg0);
 }/* end releasePortAction */
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::releasePortGated
+//		Method:		osx_wch_driver_ch341::releasePortGated
 //
 //		Inputs:		refCon - the Port
 //
@@ -1703,7 +1514,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::releasePortAction(OSObject *owner, voi
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::releasePortGated( void *refCon )
+IOReturn osx_wch_driver_ch341::releasePortGated( void *refCon )
 {
     PortInfo_t          *port = (PortInfo_t *) refCon;
     UInt32              busyState;
@@ -1740,7 +1551,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::releasePortGated( void *refCon )
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::setState
+//		Method:		osx_wch_driver_ch341::setState
 //
 //		Inputs:		state - state to set
 //					mask - state mask
@@ -1752,12 +1563,13 @@ IOReturn nl_bjaelectronics_driver_PL2303::releasePortGated( void *refCon )
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::setState(UInt32 state, UInt32 mask, void *refCon)
+IOReturn osx_wch_driver_ch341::setState(UInt32 state, UInt32 mask, void *refCon)
 {
     PortInfo_t *port = (PortInfo_t *) refCon;
     IOReturn	ret;
-    DEBUG_IOLog(4,"%s(%p)::setState state %p mask %p\n", getName(), this, mask, state);
-    	
+    DEBUG_IOLog(4,"%s(%p)::setState state %u mask %u\n", getName(), this, state, mask);
+    
+    return kIOReturnIOError; // ----
 	// Cannot acquire or activate via setState
     
     if (mask & (PD_S_ACQUIRED | PD_S_ACTIVE | (~EXTERNAL_MASK)))
@@ -1771,16 +1583,16 @@ IOReturn nl_bjaelectronics_driver_PL2303::setState(UInt32 state, UInt32 mask, vo
 	
 	// always store handshakeline state
 	mask |=  kHandshakeInMask;
-	if (port->lineState & kCTS) state |= PD_RS232_S_CTS; else state &= ~( PD_RS232_S_CTS );
-	if (port->lineState & kDSR) state |= PD_RS232_S_DSR; else state &= ~( PD_RS232_S_DSR );
-	if (port->lineState & kRI)  state |= PD_RS232_S_RI; else state &= ~( PD_RS232_S_RI );
-	if (port->lineState & kDCD) state |= PD_RS232_S_CAR; else state &= ~( PD_RS232_S_CAR );			
-    DEBUG_IOLog(5,"%s(%p)::setState linestatestate %p mask %p state %p\n", getName(), this, port->lineState, mask, state);
+	if (port->lineState & CH341_BIT_CTS) state |= PD_RS232_S_CTS; else state &= ~( PD_RS232_S_CTS );
+	if (port->lineState & CH341_BIT_DSR) state |= PD_RS232_S_DSR; else state &= ~( PD_RS232_S_DSR );
+	if (port->lineState & CH341_BIT_RI)  state |= PD_RS232_S_RI; else state &= ~( PD_RS232_S_RI );
+	if (port->lineState & CH341_BIT_DCD) state |= PD_RS232_S_CAR; else state &= ~( PD_RS232_S_CAR );
+    DEBUG_IOLog(5,"%s(%p)::setState linestatestate %u mask %u state %u\n", getName(), this, port->lineState, mask, state);
 
 	if (mask)
 	{
 		retain();
-		ret = fCommandGate->runAction(setStateAction, (void *)state, (void *)mask, (void *)refCon);
+		ret = fCommandGate->runAction(setStateAction, (void *)(uintptr_t)state, (void *)(uintptr_t)mask, (void *)refCon);
 		release();	
 		return ret;
 	}
@@ -1792,26 +1604,23 @@ IOReturn nl_bjaelectronics_driver_PL2303::setState(UInt32 state, UInt32 mask, vo
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::setStateAction
+//		Method:		osx_wch_driver_ch341::setStateAction
 //
 //		Desc:		Dummy pass through for setStateGated.
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::setStateAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *)
+IOReturn osx_wch_driver_ch341::setStateAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *)
 {
-    DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::setStateAction\n");
+    DEBUG_IOLog(4,"osx_wch_driver_ch341::setStateAction\n");
   
-#if defined(__x86_64__)
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->setStateGated((UInt64)arg0, (UInt64)arg1, (void *)arg2);
-#else
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->setStateGated((UInt32)arg0, (UInt32)arg1, (void *)arg2);
-#endif
+    return ((osx_wch_driver_ch341 *)owner)->setStateGated((UInt32)(uintptr_t)arg0, (UInt32)(uintptr_t)arg1, (void *)arg2);
+
 }/* end setStateAction */
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::setState
+//      Method:     osx_wch_driver_ch341::setState
 //
 //      Inputs:     state - state to set, mask - state mask, refCon - the Port
 //
@@ -1828,7 +1637,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::setStateAction(OSObject *owner, void *
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::setStateGated( UInt32 state, UInt32 mask, void *refCon )
+IOReturn osx_wch_driver_ch341::setStateGated( UInt32 state, UInt32 mask, void *refCon )
 {
     PortInfo_t *port = (PortInfo_t *) refCon;
     DEBUG_IOLog(4,"%s(%p)::setStateGated\n", getName(), this);
@@ -1840,7 +1649,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::setStateGated( UInt32 state, UInt32 ma
 	{
 	    // ignore any bits that are read-only
 		mask &= (~port->FlowControl & PD_RS232_A_MASK) | PD_S_MASK;
-		DEBUG_IOLog(5,"%s(%p)::setStateGated mask: %p state %p ", getName(), this,mask, state);
+		DEBUG_IOLog(5,"%s(%p)::setStateGated mask: %u state %u ", getName(), this,mask, state);
 		
 		if ( mask)
 			changeState( port, state, mask );
@@ -1855,7 +1664,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::setStateGated( UInt32 state, UInt32 ma
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::watchState
+//		Method:		osx_wch_driver_ch341::watchState
 //
 //		Inputs:		state - state to watch for
 //				mask - state mask bits
@@ -1867,11 +1676,12 @@ IOReturn nl_bjaelectronics_driver_PL2303::setStateGated( UInt32 state, UInt32 ma
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::watchState(UInt32 *state, UInt32 mask, void *refCon)
+IOReturn osx_wch_driver_ch341::watchState(UInt32 *state, UInt32 mask, void *refCon)
 {
     IOReturn 	ret;
-    DEBUG_IOLog(4,"%s(%p)::watchState state %p mask  %p\n", getName(), this, *state, mask);
-	    
+    DEBUG_IOLog(4,"%s(%p)::watchState state %u mask  %u\n", getName(), this, *state, mask);
+    
+    return kIOReturnIOError; // ----
     if (!state) 
         return kIOReturnBadArgument;
 	
@@ -1879,7 +1689,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::watchState(UInt32 *state, UInt32 mask,
         return kIOReturnSuccess;
 	
     retain();
-    ret = fCommandGate->runAction(watchStateAction, (void *)state, (void *)mask);
+    ret = fCommandGate->runAction(watchStateAction, (void *)state, (void *)(uintptr_t)mask);
     release();
     return ret;
 	
@@ -1887,27 +1697,24 @@ IOReturn nl_bjaelectronics_driver_PL2303::watchState(UInt32 *state, UInt32 mask,
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::watchStateAction
+//		Method:		osx_wch_driver_ch341::watchStateAction
 //
 //		Desc:		Dummy pass through for watchStateGated.
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::watchStateAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
+IOReturn osx_wch_driver_ch341::watchStateAction(OSObject *owner, void *arg0, void *arg1, void *, void *)
 {
-    DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::watchStateAction\n");
+    DEBUG_IOLog(4,"osx_wch_driver_ch341::watchStateAction\n");
 
-#if defined(__x86_64__)
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->watchStateGated((UInt32 *)arg0, (UInt64)arg1);
-#else
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->watchStateGated((UInt32 *)arg0, (UInt32)arg1);
-#endif
+    return ((osx_wch_driver_ch341 *)owner)->watchStateGated((UInt32 *)arg0, (UInt32)(uintptr_t)arg1);
+
 }/* end watchStateAction */
 
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::watchState
+//      Method:     osx_wch_driver_ch341::watchState
 //
 //      Inputs:     state - state to watch for, mask - state mask bits, refCon - the Port
 //
@@ -1919,10 +1726,10 @@ IOReturn nl_bjaelectronics_driver_PL2303::watchStateAction(OSObject *owner, void
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::watchStateGated( UInt32 *state, UInt32 mask)
+IOReturn osx_wch_driver_ch341::watchStateGated( UInt32 *state, UInt32 mask)
 {
     IOReturn    ret = kIOReturnNotOpen;
-    DEBUG_IOLog(4,"%s(%p)::watchStateGated state: %p mask: %p\n", getName(), this, *state, mask);
+    DEBUG_IOLog(4,"%s(%p)::watchStateGated state: %u mask: %u\n", getName(), this, *state, mask);
 	
 	
     if ( readPortState( fPort ) & PD_S_ACQUIRED )
@@ -1939,7 +1746,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::watchStateGated( UInt32 *state, UInt32
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::nextEvent
+//      Method:     osx_wch_driver_ch341::nextEvent
 //
 //      Inputs:     refCon - the Port
 //
@@ -1949,10 +1756,11 @@ IOReturn nl_bjaelectronics_driver_PL2303::watchStateGated( UInt32 *state, UInt32
 //
 /****************************************************************************************************/
 
-UInt32 nl_bjaelectronics_driver_PL2303::nextEvent( void *refCon )
+UInt32 osx_wch_driver_ch341::nextEvent( void *refCon )
 {
     DEBUG_IOLog(4,"%s(%p)::nextEvent\n", getName(), this);
-
+    
+    return kIOReturnIOError; // ----
 #if FIX_PARITY_PROCESSING
     UInt8 t = 0;
     UInt32 qret = peekBytefromQueue( &fPort->RX, &t, 1);
@@ -1980,7 +1788,7 @@ UInt32 nl_bjaelectronics_driver_PL2303::nextEvent( void *refCon )
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::executeEvent
+//		Method:		osx_wch_driver_ch341::executeEvent
 //
 //		Inputs:		event - The event
 //				data - any data associated with the event
@@ -1992,13 +1800,14 @@ UInt32 nl_bjaelectronics_driver_PL2303::nextEvent( void *refCon )
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::executeEvent(UInt32 event, UInt32 data, void *refCon)
+IOReturn osx_wch_driver_ch341::executeEvent(UInt32 event, UInt32 data, void *refCon)
 {
     IOReturn 	ret;
 	DEBUG_IOLog(4,"%s(%p)::executeEventAction\n", getName(), this);
-       
+    
+    return kIOReturnIOError; // ----
     retain();
-    ret = fCommandGate->runAction(executeEventAction, (void *)event, (void *)data, (void *)refCon);
+    ret = fCommandGate->runAction(executeEventAction, (void *)(uintptr_t)event, (void *)(uintptr_t)data, (void *)refCon);
     release();
 	
     return ret;
@@ -2007,27 +1816,23 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEvent(UInt32 event, UInt32 data
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::executeEventAction
+//		Method:		osx_wch_driver_ch341::executeEventAction
 //
 //		Desc:		Dummy pass through for executeEventGated.
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::executeEventAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *)
+IOReturn osx_wch_driver_ch341::executeEventAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *)
 {
-	DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::executeEventAction\n");
+	DEBUG_IOLog(4,"osx_wch_driver_ch341::executeEventAction\n");
 
-#if defined(__x86_64__)
-	return ((nl_bjaelectronics_driver_PL2303 *)owner)->executeEventGated((UInt64)arg0, (UInt64)arg1, (void *)arg2);
-#else
-        return ((nl_bjaelectronics_driver_PL2303 *)owner)->executeEventGated((UInt32)arg0, (UInt32)arg1, (void *)arg2);
-#endif
+   return ((osx_wch_driver_ch341 *)owner)->executeEventGated((UInt32)(uintptr_t)arg0, (UInt32)(uintptr_t)arg1, (void *)arg2);
 }/* end executeEventAction */
 
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::executeEventGated
+//		Method:		osx_wch_driver_ch341::executeEventGated
 //
 //
 //      Inputs:     event - The event, data - any data associated with the event, refCon - the Port
@@ -2039,12 +1844,12 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventAction(OSObject *owner, vo
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt32 data, void *refCon )
+IOReturn osx_wch_driver_ch341::executeEventGated( UInt32 event, UInt32 data, void *refCon )
 {
     PortInfo_t  *port = (PortInfo_t *) refCon;
     IOReturn    ret = kIOReturnSuccess;
     UInt32      state, delta, old;
-    int rtn;
+
 	DEBUG_IOLog(4,"%s(%p)::executeEventGated\n", getName(), this);
 	   
     delta = 0;
@@ -2076,7 +1881,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt3
 			
 			old = port->FlowControl;				    // save old modes for unblock checks
             port->FlowControl = data & (CAN_BE_AUTO | CAN_NOTIFY);  // new values, trimmed to legal values
-			DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL port->FlowControl %p\n", getName(), this, port->FlowControl );
+			DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL port->FlowControl %u\n", getName(), this, port->FlowControl );
 		
 			// now cleanup if we've blocked RX or TX with the previous style flow control and we're switching to a different kind
 			// we have 5 different flow control modes to check and unblock; 3 on rx, 2 on tx
@@ -2085,21 +1890,8 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt3
 			if ( !(old & PD_RS232_S_CTS) && (PD_RS232_S_CTS & port->FlowControl) )
 				{
 				DEBUG_IOLog(1,"%s(%p)::executeEvent - Automatic CTS flowcontrol On\n", getName(), this);
-					IOUSBDevRequest request;
-
-					if (fPort->type == rev_HX ) {
-						request.wIndex = 0x61;
-					} else {
-						request.wIndex = 0x41;
-						 
-					}
-					request.bmRequestType = VENDOR_WRITE_REQUEST_TYPE; 
-					request.bRequest = VENDOR_WRITE_REQUEST;
-					request.wValue =  0; 
-					request.wLength = 0;
-					request.pData = NULL;
-					rtn = fpDevice->DeviceRequest(&request);
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - executeEvent - device request: %p \n", getName(), this,  rtn);
+                   
+                    //TODO
 				
 					port->FlowControlState = CONTINUE_SEND; 
 				}
@@ -2107,23 +1899,15 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt3
 			if ( (old & PD_RS232_S_CTS) && !(PD_RS232_S_CTS & port->FlowControl) )
 				{
 					DEBUG_IOLog(1,"%s(%p)::executeEvent - Automatic CTS flowcontrol Off\n", getName(), this);
-					IOUSBDevRequest request;
-
-					request.wIndex = 0x00;
-					request.bmRequestType = VENDOR_WRITE_REQUEST_TYPE; 
-					request.bRequest = VENDOR_WRITE_REQUEST;
-					request.wValue =  0; 
-					request.wLength = 0;
-					request.pData = NULL;
-					rtn = fpDevice->DeviceRequest(&request);
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - device request: %p \n", getName(), this,  rtn);
+					
+                    //TODO
 				
 					port->FlowControlState = CONTINUE_SEND; 
 				}
 				
 			if (!fTerminate && old && (old ^ port->FlowControl))		// if had some modes, and some modes are different
 			{
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - We zijn in de IF  %p \n", getName(), this , PD_RS232_S_CTS);
+					DEBUG_IOLog(1,"%s(%p)::executeEvent - Changed\n", getName(), this );
 			
 			
 			
@@ -2133,7 +1917,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt3
 				// if switching away from rx xon/xoff and we've sent an xoff, unblock
 				if (SwitchingAwayFrom(PD_RS232_A_RXO) && port->xOffSent)
 				{
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL send xoff\n", getName(), this, port->FlowControl );
+					DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL send xoff\n", getName(), this);
 					addBytetoQueue(&(port->TX), port->XONchar);
 					port->xOffSent = false;
 					setUpTransmit( );
@@ -2142,7 +1926,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt3
 				// if switching away from RTS flow control and we've lowered RTS, need to raise it to unblock
 				if (SwitchingAwayFrom(PD_RS232_A_RTS) && !port->RTSAsserted)
 				{
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL set RTS\n", getName(), this, port->FlowControl );
+					DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL set RTS\n", getName(), this);
 					port->RTSAsserted = true;
 					port->State |= PD_RS232_S_RFR;		    // raise RTS again
 				}
@@ -2150,7 +1934,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt3
 				// if switching away from DTR flow control and we've lowered DTR, need to raise it to unblock
 				if (SwitchingAwayFrom(PD_RS232_A_DTR) && !port->DTRAsserted)
 				{
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL set DTR\n", getName(), this, port->FlowControl );
+					DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL set DTR\n", getName(), this);
 					port->DTRAsserted = true;			
 					port->State |= PD_RS232_S_DTR;		    // raise DTR again
 				}
@@ -2164,8 +1948,8 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt3
 					port->FlowControlState = CONTINUE_SEND;
 				} 
 				changeState( port, (UInt32)PD_S_ACTIVE, (UInt32)PD_S_ACTIVE ); 
-
-			DEBUG_IOLog(4,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL end port->FlowControl %p\n", getName(), this, port->FlowControl );
+                
+                DEBUG_IOLog(4,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL end port->FlowControl %u\n", getName(), this, port->FlowControl );
 
 			}
 		
@@ -2271,7 +2055,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt3
 			
 		case PD_RS232_E_STOP_BITS:
 			DEBUG_IOLog(4,"%s(%p)::executeEvent - PD_RS232_E_STOP_BITS\n", getName(), this );
-			if ( (data < 0) || (data > 20) )
+			if ( data > 20 )
 				ret = kIOReturnBadArgument;
 			else
 			{
@@ -2386,7 +2170,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt3
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::requestEvent
+//		Method:		osx_wch_driver_ch341::requestEvent
 //
 //		Inputs:		event - The event
 //					refCon - the Port (not used)
@@ -2398,14 +2182,15 @@ IOReturn nl_bjaelectronics_driver_PL2303::executeEventGated( UInt32 event, UInt3
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::requestEvent(UInt32 event, UInt32 *data, void *refCon)
+IOReturn osx_wch_driver_ch341::requestEvent(UInt32 event, UInt32 *data, void *refCon)
 {
     IOReturn 	ret;
     
 	DEBUG_IOLog(4,"%s(%p)::requestEvent\n", getName(), this);
     
+    return kIOReturnIOError; // ----
     retain();
-    ret = fCommandGate->runAction(requestEventAction, (void *)event, (void *)data, (void *)refCon);
+    ret = fCommandGate->runAction(requestEventAction, (void *)(uintptr_t)event, (void *)data, (void *)refCon);
     release();
     
     return ret;
@@ -2414,26 +2199,22 @@ IOReturn nl_bjaelectronics_driver_PL2303::requestEvent(UInt32 event, UInt32 *dat
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::requestEventAction
+//		Method:		osx_wch_driver_ch341::requestEventAction
 //
 //		Desc:		Dummy pass through for requestEventGated.
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::requestEventAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *)
+IOReturn osx_wch_driver_ch341::requestEventAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *)
 {
-	DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::requestEventAction\n");
+	DEBUG_IOLog(4,"osx_wch_driver_ch341::requestEventAction\n");
 
-#if defined(__x86_64__)
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->requestEventGated((UInt64)arg0, (UInt32 *)arg1, (void *)arg2);
-#else
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->requestEventGated((UInt32)arg0, (UInt32 *)arg1, (void *)arg2);  
-#endif
+    return ((osx_wch_driver_ch341 *)owner)->requestEventGated((UInt32)(uintptr_t)arg0, (UInt32 *)arg1, (void *)arg2);
 }/* end requestEventAction */
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::requestEvent
+//      Method:     osx_wch_driver_ch341::requestEvent
 //
 //      Inputs:     event - The event, refCon - the Port
 //
@@ -2447,7 +2228,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::requestEventAction(OSObject *owner, vo
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::requestEventGated( UInt32 event, UInt32 *data, void *refCon )
+IOReturn osx_wch_driver_ch341::requestEventGated( UInt32 event, UInt32 *data, void *refCon )
 {
     PortInfo_t  *port = (PortInfo_t *) refCon;
     IOReturn    returnValue = kIOReturnSuccess;
@@ -2600,7 +2381,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::requestEventGated( UInt32 event, UInt3
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::enqueueEvent
+//      Method:     osx_wch_driver_ch341::enqueueEvent
 //
 //      Inputs:     event - The event, data - any data associated with the event, 
 //                                              sleep - true (wait for it), false (don't), refCon - the Port
@@ -2611,13 +2392,14 @@ IOReturn nl_bjaelectronics_driver_PL2303::requestEventGated( UInt32 event, UInt3
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::enqueueEvent( UInt32 event, UInt32 data, bool sleep, void *refCon)
+IOReturn osx_wch_driver_ch341::enqueueEvent( UInt32 event, UInt32 data, bool sleep, void *refCon)
 {
-	DEBUG_IOLog(2,"%s(%p)::enqueueEvent event: %p \n", getName(), this, data);
+	DEBUG_IOLog(2,"%s(%p)::enqueueEvent event: %u \n", getName(), this, data);
 	PortInfo_t  *port = (PortInfo_t *) refCon;
     IOReturn    ret = kIOReturnSuccess;
     UInt32      state, delta;
-    	
+    
+    return kIOReturnIOError; // ----
     delta = 0;
     state = readPortState( port );  
 
@@ -2669,7 +2451,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::enqueueEvent( UInt32 event, UInt32 dat
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::dequeueEvent
+//      Method:     osx_wch_driver_ch341::dequeueEvent
 //
 //      Inputs:     sleep - true (wait for it), false (don't), refCon - the Port
 //
@@ -2679,10 +2461,11 @@ IOReturn nl_bjaelectronics_driver_PL2303::enqueueEvent( UInt32 event, UInt32 dat
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::dequeueEvent( UInt32 *event, UInt32 *data, bool sleep, void *refCon )
+IOReturn osx_wch_driver_ch341::dequeueEvent( UInt32 *event, UInt32 *data, bool sleep, void *refCon )
 {
 	DEBUG_IOLog(4,"%s(%p)::dequeueEvent\n", getName(), this);
-
+    
+    return kIOReturnIOError; // ----
     PortInfo_t *port = (PortInfo_t *) refCon;
     	
     if ( (event == NULL) || (data == NULL) )
@@ -2702,19 +2485,19 @@ IOReturn nl_bjaelectronics_driver_PL2303::dequeueEvent( UInt32 *event, UInt32 *d
             return rtn;
         *data = Value;
 
-        DATA_IOLog(2,"nl_bjaelectronics_driver_PL2303::dequeueEvent held=[0x%X]\n", Value );
+        DATA_IOLog(2,"osx_wch_driver_ch341::dequeueEvent held=[0x%X]\n", Value );
 
         if(Value == 0xff) {
             while(getBytetoQueue(&fPort->RX, &Value) == kQueueEmpty);
-            DATA_IOLog(2,"nl_bjaelectronics_driver_PL2303::dequeueEvent purged=[0x%X]\n", Value );
+            DATA_IOLog(2,"osx_wch_driver_ch341::dequeueEvent purged=[0x%X]\n", Value );
         }
 
         if(*event == PD_E_INTEGRITY_ERROR) {
             getBytetoQueue(&fPort->RX, &Value); // Purge marker
-            DATA_IOLog(2,"nl_bjaelectronics_driver_PL2303::dequeueEvent purged=[0x%X]\n", Value );
+            DATA_IOLog(2,"osx_wch_driver_ch341::dequeueEvent purged=[0x%X]\n", Value );
             while(getBytetoQueue(&fPort->RX, &Value) == kQueueEmpty)
                 IOSleep(BYTE_WAIT_PENALTY); // in case it is not yet cool
-            DATA_IOLog(2,"nl_bjaelectronics_driver_PL2303::dequeueEvent purged=[0x%X]\n", Value );
+            DATA_IOLog(2,"osx_wch_driver_ch341::dequeueEvent purged=[0x%X]\n", Value );
         }
 #endif
 		return kIOReturnSuccess;
@@ -2726,7 +2509,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::dequeueEvent( UInt32 *event, UInt32 *d
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::enqueueData
+//		Method:		osx_wch_driver_ch341::enqueueData
 //
 //		Inputs:		buffer - the data
 //					size - number of bytes
@@ -2740,15 +2523,16 @@ IOReturn nl_bjaelectronics_driver_PL2303::dequeueEvent( UInt32 *event, UInt32 *d
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::enqueueData(UInt8 *buffer, UInt32 size, UInt32 *count, bool sleep, void *refCon)
+IOReturn osx_wch_driver_ch341::enqueueData(UInt8 *buffer, UInt32 size, UInt32 *count, bool sleep, void *refCon)
 {
     IOReturn 	ret;
-		
+    
+    return kIOReturnIOError; // ----
     if (count == NULL || buffer == NULL)
         return kIOReturnBadArgument;
 	
     retain();
-	ret = fCommandGate->runAction(enqueueDataAction, (void *)buffer, (void *)size, (void *)count, (void *)sleep);
+	ret = fCommandGate->runAction(enqueueDataAction, (void *)buffer, (void *)(uintptr_t)size, (void *)count, (void *)sleep);
     release();
 	
     return ret;
@@ -2757,25 +2541,22 @@ IOReturn nl_bjaelectronics_driver_PL2303::enqueueData(UInt8 *buffer, UInt32 size
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::enqueueDatatAction
+//		Method:		osx_wch_driver_ch341::enqueueDatatAction
 //
 //		Desc:		Dummy pass through for equeueDataGated.
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::enqueueDataAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *arg3)
+IOReturn osx_wch_driver_ch341::enqueueDataAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *arg3)
 {
-#if defined(__x86_64__)
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->enqueueDataGated((UInt8 *)arg0, (UInt64)arg1, (UInt32 *)arg2, (bool)arg3);
-#else
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->enqueueDataGated((UInt8 *)arg0, (UInt32)arg1, (UInt32 *)arg2, (bool)arg3);
-#endif
+    return ((osx_wch_driver_ch341 *)owner)->enqueueDataGated((UInt8 *)arg0, (UInt32)(uintptr_t)arg1, (UInt32 *)arg2, (bool)arg3);
+
 }/* end enqueueDataAction */
 
 /****************************************************************************************************/
 //
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::enqueueData
+//      Method:     osx_wch_driver_ch341::enqueueData
 //
 //      Inputs:     buffer - the data, size - number of bytes, sleep - true (wait for it), false (don't),
 //                                                                                      refCon - the Port
@@ -2796,7 +2577,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::enqueueDataAction(OSObject *owner, voi
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::enqueueDataGated( UInt8 *buffer, UInt32 size, UInt32 *count, bool sleep)
+IOReturn osx_wch_driver_ch341::enqueueDataGated( UInt8 *buffer, UInt32 size, UInt32 *count, bool sleep)
 {
     UInt32      state = PD_S_TXQ_LOW_WATER;
     IOReturn    rtn = kIOReturnSuccess;
@@ -2873,7 +2654,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::enqueueDataGated( UInt8 *buffer, UInt3
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::dequeueData
+//		Method:		osx_wch_driver_ch341::dequeueData
 //
 //		Inputs:		size - buffer size
 //					min - minimum bytes required
@@ -2887,16 +2668,17 @@ IOReturn nl_bjaelectronics_driver_PL2303::enqueueDataGated( UInt8 *buffer, UInt3
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::dequeueData(UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min, void *refCon)
+IOReturn osx_wch_driver_ch341::dequeueData(UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min, void *refCon)
 {
     IOReturn 	ret;
 	DEBUG_IOLog(4,"%s(%p)::dequeueData\n", getName(), this);
-		
+    
+    return kIOReturnIOError; // ----
     if ((count == NULL) || (buffer == NULL) || (min > size))
         return kIOReturnBadArgument;
 	
 	retain();
-    ret = fCommandGate->runAction(dequeueDataAction, (void *)buffer, (void *)size, (void *)count, (void *)min);
+    ret = fCommandGate->runAction(dequeueDataAction, (void *)buffer, (void *)(uintptr_t)size, (void *)count, (void *)(uintptr_t)min);
     release();
 	
     return ret;
@@ -2906,26 +2688,23 @@ IOReturn nl_bjaelectronics_driver_PL2303::dequeueData(UInt8 *buffer, UInt32 size
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::dequeueDatatAction
+//		Method:		osx_wch_driver_ch341::dequeueDatatAction
 //
 //		Desc:		Dummy pass through for equeueDataGated.
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::dequeueDataAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *arg3)
+IOReturn osx_wch_driver_ch341::dequeueDataAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *arg3)
 {
-	DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::dequeueDataAction\n");
+	DEBUG_IOLog(4,"osx_wch_driver_ch341::dequeueDataAction\n");
   
-#if defined(__x86_64__)
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->dequeueDataGated((UInt8 *)arg0, (UInt64)arg1, (UInt32 *)arg2, (UInt64)arg3);
-#else
-    return ((nl_bjaelectronics_driver_PL2303 *)owner)->dequeueDataGated((UInt8 *)arg0, (UInt32)arg1, (UInt32 *)arg2, (UInt32)arg3);
-#endif
+    return ((osx_wch_driver_ch341 *)owner)->dequeueDataGated((UInt8 *)arg0, (UInt32)(uintptr_t)arg1, (UInt32 *)arg2, (UInt32)(uintptr_t)arg3);
+
 }/* end dequeueDataAction */
 
  /****************************************************************************************************/
  //
- //      Method:     nl_bjaelectronics_driver_PL2303::dequeueData
+ //      Method:     osx_wch_driver_ch341::dequeueData
  //
  //      Inputs:     size - buffer size, min - minimum bytes required, refCon - the Port
  //
@@ -2950,7 +2729,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::dequeueDataAction(OSObject *owner, voi
  //
  /****************************************************************************************************/
  
- IOReturn nl_bjaelectronics_driver_PL2303::dequeueDataGated( UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min )
+ IOReturn osx_wch_driver_ch341::dequeueDataGated( UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min )
  {
 	 IOReturn    rtn = kIOReturnSuccess;
 	 UInt32      state = 0;
@@ -2984,10 +2763,10 @@ IOReturn nl_bjaelectronics_driver_PL2303::dequeueDataAction(OSObject *owner, voi
              IOLog("%s(%p)::dequeueDataGated - INTERRUPTED while reading\n", getName(), this );
              return rtn;
          }
-         DATA_IOLog(2,"nl_bjaelectronics_driver_PL2303::dequeueDataGated held=[0x%X]\n", Value );
+         DATA_IOLog(2,"osx_wch_driver_ch341::dequeueDataGated held=[0x%X]\n", Value );
          if(Value == 0xff) {
              while(getBytetoQueue(Queue, &Value) == kQueueEmpty); // Read double 0xff
-             DATA_IOLog(2,"nl_bjaelectronics_driver_PL2303::dequeueDataGated purged=[0x%X]\n", Value );
+             DATA_IOLog(2,"osx_wch_driver_ch341::dequeueDataGated purged=[0x%X]\n", Value );
          }
          *(buffer++) = Value;
          ++(*count);
@@ -3003,7 +2782,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::dequeueDataAction(OSObject *owner, voi
 		 int count_read;
 		 
 		 /* Figure out how many bytes we have left to queue up */
-		 DEBUG_IOLog(4,"%s(%p)::dequeueDataGated - min: %d count: %d size: %d SizeQueue: %d InQueue: %d \n", getName(), this,min,*count, (size - *count), Queue->Size, Queue->InQueue );
+		 DEBUG_IOLog(4,"%s(%p)::dequeueDataGated - min: %d count: %d size: %d SizeQueue: %lu InQueue: %lu \n", getName(), this,min,*count, (size - *count), Queue->Size, Queue->InQueue );
          
 #if FIX_PARITY_PROCESSING
          /* Always prefer waiting for HIGH_WATER to waiting a little bit more for not empty queue */
@@ -3039,10 +2818,10 @@ IOReturn nl_bjaelectronics_driver_PL2303::dequeueDataAction(OSObject *owner, voi
                  IOLog("%s(%p)::dequeueDataGated - INTERRUPTED while reading\n", getName(), this );
                  return rtn;
              }
-             DATA_IOLog(2,"nl_bjaelectronics_driver_PL2303::dequeueDataGated held=[0x%X]\n", Value );
+             DATA_IOLog(2,"osx_wch_driver_ch341::dequeueDataGated held=[0x%X]\n", Value );
              if(Value == 0xff) {
                  while(getBytetoQueue(Queue, &Value) == kQueueEmpty); // Read double 0xff
-                 DATA_IOLog(2,"nl_bjaelectronics_driver_PL2303::dequeueDataGated purged=[0x%X]\n", Value );
+                 DATA_IOLog(2,"osx_wch_driver_ch341::dequeueDataGated purged=[0x%X]\n", Value );
              }
              *(buffer++) = Value;
              ++(*count);
@@ -3064,7 +2843,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::dequeueDataAction(OSObject *owner, voi
 
 /****************************************************************************************************/
 //
-//		Method:		nl_bjaelectronics_driver_PL2303::getState
+//		Method:		osx_wch_driver_ch341::getState
 //
 //		Inputs:		refCon - the Port (not used)
 //
@@ -3074,7 +2853,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::dequeueDataAction(OSObject *owner, voi
 //
 /****************************************************************************************************/
 
-UInt32 nl_bjaelectronics_driver_PL2303::getState(void *refCon)
+UInt32 osx_wch_driver_ch341::getState(void *refCon)
 {    
 	DEBUG_IOLog(6,"%s(%p)::getState\n", getName(), this);
 
@@ -3095,7 +2874,7 @@ UInt32 nl_bjaelectronics_driver_PL2303::getState(void *refCon)
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::StartTransmission
+//      Method:     osx_wch_driver_ch341::StartTransmission
 //
 //      Inputs:     control_length - Length of control data
 //                  control_buffer - Control data
@@ -3109,7 +2888,7 @@ UInt32 nl_bjaelectronics_driver_PL2303::getState(void *refCon)
 //
 /****************************************************************************************************/
 
-IOReturn nl_bjaelectronics_driver_PL2303::startTransmit(UInt32 control_length, UInt8 *control_buffer, UInt32 data_length, UInt8 *data_buffer)
+IOReturn osx_wch_driver_ch341::startTransmit(UInt32 control_length, UInt8 *control_buffer, UInt32 data_length, UInt8 *data_buffer)
 {
     IOReturn    ior;
     
@@ -3140,7 +2919,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::startTransmit(UInt32 control_length, U
 	buflen = fCount;
 	buf = &fPipeOutBuffer[0];
 	
-	DATA_IOLog(1,"nl_bjaelectronics_driver_PL2303: Send (bytes %d): ",fCount);
+	DATA_IOLog(1,"osx_wch_driver_ch341: Send (bytes %d): ",fCount);
 	while ( buflen ){
 		unsigned char c = *buf;
 		DATA_IOLog(1,"[%02x] ",c);
@@ -3157,7 +2936,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::startTransmit(UInt32 control_length, U
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::dataWriteComplete
+//      Method:     osx_wch_driver_ch341::dataWriteComplete
 //
 //      Inputs:     obj - me, param - parameter block(the Port), rc - return code, remaining - what's left
 //
@@ -3167,11 +2946,11 @@ IOReturn nl_bjaelectronics_driver_PL2303::startTransmit(UInt32 control_length, U
 //
 /****************************************************************************************************/
 
-void nl_bjaelectronics_driver_PL2303::dataWriteComplete( void *obj, void *param, IOReturn rc, UInt32 remaining )
+void osx_wch_driver_ch341::dataWriteComplete( void *obj, void *param, IOReturn rc, UInt32 remaining )
 {
 
-    nl_bjaelectronics_driver_PL2303  *me = (nl_bjaelectronics_driver_PL2303*)obj;
-	DEBUG_IOLog(1,"nl_bjaelectronics_driver_PL2303::dataWriteComplete return code c: %d, fcount: %d,  remaining: %d\n", rc, me->fCount,remaining );
+    osx_wch_driver_ch341  *me = (osx_wch_driver_ch341*)obj;
+	DEBUG_IOLog(1,"osx_wch_driver_ch341::dataWriteComplete return code c: %d, fcount: %d,  remaining: %d\n", rc, me->fCount,remaining );
 
     // Boolean done = true;                // write really finished?  // use is commented out below.
     me->fWriteActive = false;
@@ -3214,7 +2993,7 @@ void nl_bjaelectronics_driver_PL2303::dataWriteComplete( void *obj, void *param,
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::interruptReadComplete
+//      Method:     osx_wch_driver_ch341::interruptReadComplete
 //
 //      Inputs:     obj - me, param - parameter block(the Port), rc - return code, remaining - what's left
 //                                                                                  (whose idea was that?)
@@ -3226,27 +3005,23 @@ void nl_bjaelectronics_driver_PL2303::dataWriteComplete( void *obj, void *param,
 //
 /****************************************************************************************************/
 
-void nl_bjaelectronics_driver_PL2303::interruptReadComplete( void *obj, void *param, IOReturn rc, UInt32 remaining )
+void osx_wch_driver_ch341::interruptReadComplete( void *obj, void *param, IOReturn rc, UInt32 remaining )
 {
-	DEBUG_IOLog(1,"nl_bjaelectronics_driver_PL2303::interruptReadComplete" );
-	UInt8 status_idx = kUART_STATE;
+	DEBUG_IOLog(1,"osx_wch_driver_ch341::interruptReadComplete" );
+
 	UInt8 length = INTERRUPT_BUFF_SIZE;
 	UInt32 stat = 0;
-    nl_bjaelectronics_driver_PL2303  *me = (nl_bjaelectronics_driver_PL2303*)obj;
+    osx_wch_driver_ch341  *me = (osx_wch_driver_ch341*)obj;
 	PortInfo_t            *port = (PortInfo_t*)param;
     UInt32      dLen;	
 	
     if ( rc == kIOReturnSuccess )   /* If operation returned ok:    */
 	{
-		if ( (me->fpDevice->GetVendorID() == SIEMENS_VENDOR_ID ) && (me->fpDevice->GetProductID() == SIEMENS_PRODUCT_ID_X65) ) {
-				status_idx = 0;
-				length = 1;
-				DEBUG_IOLog( 3, "nl_bjaelectronics_driver_PL2303::interruptReadComplete interrupt Buff size = 1\n");
-			}
+		
 		dLen = length - remaining;
     	if (dLen != length)
 		{
-			DEBUG_IOLog(1,"nl_bjaelectronics_driver_PL2303::interruptReadComplete wrong buffersize");
+			DEBUG_IOLog(1,"osx_wch_driver_ch341::interruptReadComplete wrong buffersize");
 		} else {
 
 
@@ -3254,28 +3029,34 @@ void nl_bjaelectronics_driver_PL2303::interruptReadComplete( void *obj, void *pa
 			UInt32 buflen;
 			buflen = dLen;
 			buf = &me->fpinterruptPipeBuffer[0];
+            
+            UInt8 status;
+            status = ~buf[2] & CH341_BITS_MODEM_STAT;
 #ifdef DATALOG
 
-			DATA_IOLog(1,"nl_bjaelectronics_driver_PL2303: Interrupt: ");
+			DATA_IOLog(1,"osx_wch_driver_ch341: Interrupt: ");
 			unsigned char c = buf[status_idx];
 		    DATA_IOLog(1,"[%02x] ",c);	
 #endif	
-			me->fPort->lineState = buf[status_idx];		
+            if (buf[1] & CH341_MULT_STAT)
+                DEBUG_IOLog(4, "osx_wch_driver_ch341::interruptReadComplete - multiple status change\n");
+            
+			me->fPort->lineState =  status;
 
-			if (buf[status_idx] & kCTS) stat |= PD_RS232_S_CTS;
-			if (buf[status_idx] & kDSR) stat |= PD_RS232_S_DSR;
-			if (buf[status_idx] & kRI)  stat |= PD_RS232_S_RI;
-			if (buf[status_idx] & kDCD) stat |= PD_RS232_S_CAR;
+			if (status & CH341_BIT_CTS) stat |= PD_RS232_S_CTS;
+			if (status & CH341_BIT_DSR) stat |= PD_RS232_S_DSR;
+			if (status & CH341_BIT_RI)  stat |= PD_RS232_S_RI;
+			if (status & CH341_BIT_DCD) stat |= PD_RS232_S_CAR;
             // ++ Parity check
-            if(buf[status_idx] & kParityError) {
-#if FIX_PARITY_PROCESSING
-                DEBUG_IOLog(5,"nl_bjaelectronics_driver_PL2303::interruptReadComplete PARITY ERROR\n");
-                me->addBytetoQueue(&me->fPort->RX, 0xff); // Internal parity error marker
-                me->addBytetoQueue(&me->fPort->RX, 0x00); // Internal parity error marker
-#else
-                DEBUG_IOLog(5,"nl_bjaelectronics_driver_PL2303::interruptReadComplete PARITY ERROR (ignored)\n");
-#endif
-            }
+//            if(buf[status_idx] & kParityError) {
+//#if FIX_PARITY_PROCESSING
+//                DEBUG_IOLog(5,"osx_wch_driver_ch341::interruptReadComplete PARITY ERROR\n");
+//                me->addBytetoQueue(&me->fPort->RX, 0xff); // Internal parity error marker
+//                me->addBytetoQueue(&me->fPort->RX, 0x00); // Internal parity error marker
+//#else
+//                DEBUG_IOLog(5,"osx_wch_driver_ch341::interruptReadComplete PARITY ERROR (ignored)\n");
+//#endif
+//            }
             me->setStateGated( stat, kHandshakeInMask , port); // refresh linestate in State
 
 		}
@@ -3288,7 +3069,7 @@ void nl_bjaelectronics_driver_PL2303::interruptReadComplete( void *obj, void *pa
         me->checkQueues( port );
 #endif
     } else {
-	     DEBUG_IOLog(1,"nl_bjaelectronics_driver_PL2303::interruptReadComplete wrong return code: %p", rc );		
+	     DEBUG_IOLog(1,"osx_wch_driver_ch341::interruptReadComplete wrong return code: %d", rc );
 	}
     return;    
 }/* end interruptReadComplete */
@@ -3297,7 +3078,7 @@ void nl_bjaelectronics_driver_PL2303::interruptReadComplete( void *obj, void *pa
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::dataReadComplete
+//      Method:     osx_wch_driver_ch341::dataReadComplete
 //
 //      Inputs:     obj - me, param - parameter block(the Port), rc - return code, remaining - what's left
 //
@@ -3307,10 +3088,10 @@ void nl_bjaelectronics_driver_PL2303::interruptReadComplete( void *obj, void *pa
 //
 /****************************************************************************************************/
 
-void nl_bjaelectronics_driver_PL2303::dataReadComplete( void *obj, void *param, IOReturn rc, UInt32 remaining )
+void osx_wch_driver_ch341::dataReadComplete( void *obj, void *param, IOReturn rc, UInt32 remaining )
 {
-	DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::dataReadComplete\n");    
-    nl_bjaelectronics_driver_PL2303  *me = (nl_bjaelectronics_driver_PL2303*)obj;
+	DEBUG_IOLog(4,"osx_wch_driver_ch341::dataReadComplete\n");    
+    osx_wch_driver_ch341  *me = (osx_wch_driver_ch341*)obj;
     PortInfo_t      *port = (PortInfo_t*)param;
     UInt16          dtlength;
     IOReturn        ior = kIOReturnSuccess;
@@ -3326,7 +3107,7 @@ void nl_bjaelectronics_driver_PL2303::dataReadComplete( void *obj, void *param, 
 			UInt32 buflen;
 			buflen = dtlength;
 			buf = &me->fPipeInBuffer[0];
-			DATA_IOLog(1,"nl_bjaelectronics_driver_PL2303: Receive: ");
+			DATA_IOLog(1,"osx_wch_driver_ch341: Receive: ");
 			while ( buflen ){
 				unsigned char c = *buf;
 				DATA_IOLog(1,"[%02x] ",c);
@@ -3338,13 +3119,13 @@ void nl_bjaelectronics_driver_PL2303::dataReadComplete( void *obj, void *param, 
 
 #if FIX_PARITY_PROCESSING
             if ( !(me->fPort && me->fPort->serialRequestLock ) ) goto Fail;
-            DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::dataReadComplete IOLockLock( port->serialRequestLock );\n" );
+            DEBUG_IOLog(2,"osx_wch_driver_ch341::dataReadComplete IOLockLock( port->serialRequestLock );\n" );
 
             IOLockLock( me->fPort->serialRequestLock );
 
             clock_get_system_nanotime(&me->_fReadTimestampSecs, &me->_fReadTimestampNanosecs);
             
-            DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::dataReadComplete IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
+            DEBUG_IOLog(2,"osx_wch_driver_ch341::dataReadComplete IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
             
             IOLockUnlock( me->fPort->serialRequestLock);
 #endif
@@ -3360,13 +3141,13 @@ void nl_bjaelectronics_driver_PL2303::dataReadComplete( void *obj, void *param, 
 			me->checkQueues( port );
 			return;
 		} else {
-			DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::dataReadComplete dataReadComplete - queueing bulk read failed\n");
+			DEBUG_IOLog(4,"osx_wch_driver_ch341::dataReadComplete dataReadComplete - queueing bulk read failed\n");
 		}
 		
 	} else {
     Fail:
 		/* Read returned with error */
-		DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303::dataReadComplete - io err %x\n",rc );
+		DEBUG_IOLog(4,"osx_wch_driver_ch341::dataReadComplete - io err %x\n",rc );
 		
 	}
 	
@@ -3376,7 +3157,7 @@ void nl_bjaelectronics_driver_PL2303::dataReadComplete( void *obj, void *param, 
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::allocateRingBuffer
+//      Method:     osx_wch_driver_ch341::allocateRingBuffer
 //
 //      Inputs:     Queue - the specified queue to allocate, BufferSize - size to allocate
 //
@@ -3386,7 +3167,7 @@ void nl_bjaelectronics_driver_PL2303::dataReadComplete( void *obj, void *param, 
 //
 /****************************************************************************************************/
 
-bool nl_bjaelectronics_driver_PL2303::allocateRingBuffer( CirQueue *Queue, size_t BufferSize )
+bool osx_wch_driver_ch341::allocateRingBuffer( CirQueue *Queue, size_t BufferSize )
 {
     UInt8       *Buffer;
 	
@@ -3407,7 +3188,7 @@ bool nl_bjaelectronics_driver_PL2303::allocateRingBuffer( CirQueue *Queue, size_
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::freeRingBuffer
+//      Method:     osx_wch_driver_ch341::freeRingBuffer
 //
 //      Inputs:     Queue - the specified queue to free
 //
@@ -3418,7 +3199,7 @@ bool nl_bjaelectronics_driver_PL2303::allocateRingBuffer( CirQueue *Queue, size_
 //
 /****************************************************************************************************/
 
-void nl_bjaelectronics_driver_PL2303::freeRingBuffer( CirQueue *Queue )
+void osx_wch_driver_ch341::freeRingBuffer( CirQueue *Queue )
 {
     DEBUG_IOLog(4,"%s(%p)::freeRingBuffer\n", getName(), this );
     if( !(Queue->Start) )  goto Bogus;
@@ -3432,11 +3213,9 @@ Bogus:
 }/* end freeRingBuffer */
 
 
-
-
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::SetSpeed
+//      Method:     osx_wch_driver_ch341::SetSpeed
 //
 //      Inputs:     brate - the requested baud rate
 //
@@ -3446,15 +3225,11 @@ Bogus:
 //
 /****************************************************************************************************/  
 
-IOReturn nl_bjaelectronics_driver_PL2303::setSerialConfiguration( void )
+IOReturn osx_wch_driver_ch341::setSerialConfiguration( void )
 {
 	IOReturn rtn;
-	IOUSBDevRequest request;
-	char * buf;	
     DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration baudrate: %d \n", getName(), this, fPort->BaudRate );
-	buf = (char *)IOMalloc( 10 );
-	memset(buf, 0x00, 0x07); 
-    
+	
     fCurrentBaud = fPort->BaudRate;
     
     switch (fPort->BaudRate){
@@ -3540,94 +3315,28 @@ IOReturn nl_bjaelectronics_driver_PL2303::setSerialConfiguration( void )
     }
 	
 	if(fBaudCode) {
-		buf[0] = fBaudCode & 0xff;
-		buf[1] = (fBaudCode >> 8) & 0xff;
-		buf[2] = (fBaudCode >> 16) & 0xff;
-		buf[3] = (fBaudCode >> 24) & 0xff;
-	}
-	
-    switch (fPort->StopBits) {
-        case 0:
-            buf[4] = 0;
-            break;
-            
-        case 2:
-            buf[4] = 0; // 1 stop bit
-            break;
-            
-        case 3:
-            buf[4] = 1; // 1.5 stop bits
-            break;
-            
-        case 4:
-            buf[4] = 2; // 2 stop bits
-            break;
-            
-        default:
-            buf[4] = 0;
-            break;
+        rtn = ch341_set_baudrate(fBaudCode);
+        fPort->LineControl |= (CH341_BIT_DTR | CH341_BIT_RTS);
+	}else{
+        fPort->LineControl &= ~(CH341_BIT_DTR | CH341_BIT_RTS);
     }
-	DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration - StopBits: %d \n", getName(), this,  buf[4]);
-	
-	
-    switch(fPort->TX_Parity)
-    {
-        case PD_RS232_PARITY_NONE:
-            buf[5] = 0;
-			DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration - PARITY_NONE \n", getName(), this);
-            break;
-            
-        case PD_RS232_PARITY_ODD:
-            buf[5] = 1;
-			DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration - PARITY_ODD \n", getName(), this);
-            break;
-            
-        case PD_RS232_PARITY_EVEN:
-            buf[5] = 2;
-			DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration - PARITY_EVEN \n", getName(), this);
-            break;
-            
-        case PD_RS232_PARITY_MARK:
-			buf[5] = 3;
-			DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration - PARITY_MARK \n", getName(), this);
-			break;
-			
-		case PD_RS232_PARITY_SPACE:
-			buf[5] = 4;
-			DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration - PARITY_SPACE \n", getName(), this);
-			break;
-			
-        default:
-			buf[5] = 0;
-			DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration - PARITY_NONE \n", getName(), this);
-    }
-	
-	if (fPort->CharLength >= 5 && fPort->CharLength <= 8){
-		buf[6] = fPort->CharLength;
-    }
-	DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration - Bits: %d \n", getName(), this,  buf[6]);
-	
-	request.bmRequestType = USBmakebmRequestType(kUSBOut, kUSBClass, kUSBInterface);
-    request.bRequest = SET_LINE_REQUEST;
-	request.wValue =  0; 
-	request.wIndex = 0;
-	request.wLength = 7;
-	request.pData = buf;
-	rtn =  fpDevice->DeviceRequest(&request);
-	DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration - return: %p \n", getName(), this,  rtn);
-	IOFree( buf, 10 );
-	
-
-			
-	return rtn;
-}/* end SetSpeed */
+    
+    rtn = ch341_set_handshake(fPort->LineControl);
+    
+    /* Unimplemented:
+     * (cflag & CSIZE) : data bits [5, 8]
+     * (cflag & PARENB) : parity {NONE, EVEN, ODD}
+     * (cflag & CSTOPB) : stop bits [1, 2]
+     */
+    return rtn;
+}
 
 
 /* QueuePrimatives  */
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::AddBytetoQueue
+//      Method:     osx_wch_driver_ch341::AddBytetoQueue
 //
 //      Inputs:     Queue - the queue to be added to
 //
@@ -3637,20 +3346,20 @@ IOReturn nl_bjaelectronics_driver_PL2303::setSerialConfiguration( void )
 //
 /****************************************************************************************************/
 
-QueueStatus nl_bjaelectronics_driver_PL2303::addBytetoQueue( CirQueue *Queue, char Value )
+QueueStatus osx_wch_driver_ch341::addBytetoQueue( CirQueue *Queue, char Value )
 {
     /* Check to see if there is space by comparing the next pointer,    */
     /* with the last, If they match we are either Empty or full, so     */
     /* check the InQueue of being zero.                 */
-    DEBUG_IOLog(4,"nl_bjaelectronics_driver_PL2303(%p)::AddBytetoQueue\n", this );
+    DEBUG_IOLog(4,"osx_wch_driver_ch341(%p)::AddBytetoQueue\n", this );
 	
     if ( !(fPort && fPort->serialRequestLock ) ) goto Fail;
-	DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::addBytetoQueue IOLockLock( port->serialRequestLock );\n" );
+	DEBUG_IOLog(2,"osx_wch_driver_ch341::addBytetoQueue IOLockLock( port->serialRequestLock );\n" );
 	
     IOLockLock( fPort->serialRequestLock );
 	
     if ( (Queue->NextChar == Queue->LastChar) && Queue->InQueue ) {
-		DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::addBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueFull\n" );
+		DEBUG_IOLog(2,"osx_wch_driver_ch341::addBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueFull\n" );
 
 		IOLockUnlock( fPort->serialRequestLock);
 		return kQueueFull;
@@ -3664,7 +3373,7 @@ QueueStatus nl_bjaelectronics_driver_PL2303::addBytetoQueue( CirQueue *Queue, ch
     if ( Queue->NextChar >= Queue->End )
 		Queue->NextChar =  Queue->Start;
 
-	DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::addBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
+	DEBUG_IOLog(2,"osx_wch_driver_ch341::addBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
 	
     IOLockUnlock( fPort->serialRequestLock);
     return kQueueNoError;
@@ -3676,7 +3385,7 @@ Fail:
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::GetBytetoQueue
+//      Method:     osx_wch_driver_ch341::GetBytetoQueue
 //
 //      Inputs:     Queue - the queue to be removed from
 //
@@ -3686,19 +3395,19 @@ Fail:
 //
 /****************************************************************************************************/
 
-QueueStatus nl_bjaelectronics_driver_PL2303::getBytetoQueue( CirQueue *Queue, UInt8 *Value )
+QueueStatus osx_wch_driver_ch341::getBytetoQueue( CirQueue *Queue, UInt8 *Value )
 {
     DEBUG_IOLog(4,"%s(%p)::GetBytetoQueue\n", getName(), this );
 	
     if( !(fPort && fPort->serialRequestLock) ) goto Fail;
-	DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::getBytetoQueue IOLockLock( port->serialRequestLock ); \n" );
+	DEBUG_IOLog(2,"osx_wch_driver_ch341::getBytetoQueue IOLockLock( port->serialRequestLock ); \n" );
 
     IOLockLock( fPort->serialRequestLock );
 	
 	/* Check to see if the queue has something in it.   */
 	
     if ( (Queue->NextChar == Queue->LastChar) && !Queue->InQueue ) {
-		DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::getBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueEmpty\n" );
+		DEBUG_IOLog(2,"osx_wch_driver_ch341::getBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueEmpty\n" );
 
 		IOLockUnlock(fPort->serialRequestLock);
 		return kQueueEmpty;
@@ -3712,7 +3421,7 @@ QueueStatus nl_bjaelectronics_driver_PL2303::getBytetoQueue( CirQueue *Queue, UI
         clock_get_system_nanotime(&secs, &nanosecs);
         if( secs == _fReadTimestampSecs && nanosecs < _fReadTimestampNanosecs + LAST_BYTE_COOLDOWN ) {
             // Pretend it is empty
-            DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::getBytetoQueue IOLockUnLock( port->serialRequestLock ); (cooldown - queue empty)\n" );
+            DEBUG_IOLog(2,"osx_wch_driver_ch341::getBytetoQueue IOLockUnLock( port->serialRequestLock ); (cooldown - queue empty)\n" );
 
             IOLockUnlock(fPort->serialRequestLock);
             return kQueueEmpty;
@@ -3728,7 +3437,7 @@ QueueStatus nl_bjaelectronics_driver_PL2303::getBytetoQueue( CirQueue *Queue, UI
     if ( Queue->LastChar >= Queue->End )
 		Queue->LastChar =  Queue->Start;
 	
-	DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::getBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
+	DEBUG_IOLog(2,"osx_wch_driver_ch341::getBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
 	
     IOLockUnlock(fPort->serialRequestLock);
     return kQueueNoError;
@@ -3740,7 +3449,7 @@ Fail:
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::peekBytefromQueue
+//      Method:     osx_wch_driver_ch341::peekBytefromQueue
 //
 //      Inputs:     Queue - the queue to be peeked into, offset - index of byte to be peeked
 //
@@ -3750,19 +3459,19 @@ Fail:
 //
 /****************************************************************************************************/
 
-QueueStatus nl_bjaelectronics_driver_PL2303::peekBytefromQueue( CirQueue *Queue, UInt8 *Value, size_t offset = 0)
+QueueStatus osx_wch_driver_ch341::peekBytefromQueue( CirQueue *Queue, UInt8 *Value, size_t offset = 0)
 {
     DEBUG_IOLog(4,"%s(%p)::peekBytefromQueue\n", getName(), this );
 
     if( !(fPort && fPort->serialRequestLock) ) goto Fail;
-	DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::peekBytefromQueue IOLockLock( port->serialRequestLock ); \n" );
+	DEBUG_IOLog(2,"osx_wch_driver_ch341::peekBytefromQueue IOLockLock( port->serialRequestLock ); \n" );
 
     IOLockLock( fPort->serialRequestLock );
 
 	/* Check to see if the queue has something in it.   */
 
     if ( ((Queue->NextChar == Queue->LastChar) && !Queue->InQueue) || Queue->InQueue <= offset ) {
-		DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::peekBytefromQueue IOLockUnLock( port->serialRequestLock ); kQueueEmpty\n" );
+		DEBUG_IOLog(2,"osx_wch_driver_ch341::peekBytefromQueue IOLockUnLock( port->serialRequestLock ); kQueueEmpty\n" );
 
 		IOLockUnlock(fPort->serialRequestLock);
 		return kQueueEmpty;
@@ -3773,11 +3482,11 @@ QueueStatus nl_bjaelectronics_driver_PL2303::peekBytefromQueue( CirQueue *Queue,
     } else
         *Value = Queue->LastChar[offset];
 
-	DEBUG_IOLog(2,"nl_bjaelectronics_driver_PL2303::peekBytefromQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
+	DEBUG_IOLog(2,"osx_wch_driver_ch341::peekBytefromQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
 
     IOLockUnlock(fPort->serialRequestLock);
 
-	DEBUG_IOLog(5,"nl_bjaelectronics_driver_PL2303::peekBytefromQueue offset = %u [0x%02x]\n", (unsigned) offset, *Value );
+	DEBUG_IOLog(5,"osx_wch_driver_ch341::peekBytefromQueue offset = %u [0x%02x]\n", (unsigned) offset, *Value );
     return kQueueNoError;
 
 Fail:
@@ -3787,7 +3496,7 @@ Fail:
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::InitQueue
+//      Method:     osx_wch_driver_ch341::InitQueue
 //
 //      Inputs:     Queue - the queue to be initialized, Buffer - the buffer, size - length of buffer
 //
@@ -3797,7 +3506,7 @@ Fail:
 //
 /****************************************************************************************************/
 
-QueueStatus nl_bjaelectronics_driver_PL2303::initQueue( CirQueue *Queue, UInt8 *Buffer, size_t Size )
+QueueStatus osx_wch_driver_ch341::initQueue( CirQueue *Queue, UInt8 *Buffer, size_t Size )
 {
     DEBUG_IOLog(4,"%s(%p)::InitQueue\n", getName(), this );
 
@@ -3816,7 +3525,7 @@ QueueStatus nl_bjaelectronics_driver_PL2303::initQueue( CirQueue *Queue, UInt8 *
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::CloseQueue
+//      Method:     osx_wch_driver_ch341::CloseQueue
 //
 //      Inputs:     Queue - the queue to be closed
 //
@@ -3826,7 +3535,7 @@ QueueStatus nl_bjaelectronics_driver_PL2303::initQueue( CirQueue *Queue, UInt8 *
 //
 /****************************************************************************************************/
 
-QueueStatus nl_bjaelectronics_driver_PL2303::closeQueue( CirQueue *Queue )
+QueueStatus osx_wch_driver_ch341::closeQueue( CirQueue *Queue )
 {
     DEBUG_IOLog(4,"%s(%p)::CloseQueue\n", getName(), this );
 	
@@ -3842,7 +3551,7 @@ QueueStatus nl_bjaelectronics_driver_PL2303::closeQueue( CirQueue *Queue )
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::Flush
+//      Method:     osx_wch_driver_ch341::Flush
 //
 //      Inputs:     Queue - the queue to be flushesd
 //
@@ -3852,7 +3561,7 @@ QueueStatus nl_bjaelectronics_driver_PL2303::closeQueue( CirQueue *Queue )
 //
 /****************************************************************************************************/
 
-QueueStatus nl_bjaelectronics_driver_PL2303::flush( CirQueue *Queue )
+QueueStatus osx_wch_driver_ch341::flush( CirQueue *Queue )
 {
     DEBUG_IOLog(4,"%s(%p)::flush\n", getName(), this );
 	
@@ -3864,7 +3573,7 @@ QueueStatus nl_bjaelectronics_driver_PL2303::flush( CirQueue *Queue )
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::AddtoQueue
+//      Method:     osx_wch_driver_ch341::AddtoQueue
 //
 //      Inputs:     Queue - the queue to be added to, Buffer - data to add, Size - length of data
 //
@@ -3874,7 +3583,7 @@ QueueStatus nl_bjaelectronics_driver_PL2303::flush( CirQueue *Queue )
 //
 /****************************************************************************************************/
 
-size_t nl_bjaelectronics_driver_PL2303::addtoQueue( CirQueue *Queue, UInt8 *Buffer, size_t Size )
+size_t osx_wch_driver_ch341::addtoQueue( CirQueue *Queue, UInt8 *Buffer, size_t Size )
 {
     size_t      BytesWritten = 0;
     DEBUG_IOLog(4,"%s(%p)::AddtoQueue\n", getName(), this );
@@ -3895,7 +3604,7 @@ size_t nl_bjaelectronics_driver_PL2303::addtoQueue( CirQueue *Queue, UInt8 *Buff
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::RemovefromQueue
+//      Method:     osx_wch_driver_ch341::RemovefromQueue
 //
 //      Inputs:     Queue - the queue to be removed from, Size - size of buffer
 //
@@ -3905,7 +3614,7 @@ size_t nl_bjaelectronics_driver_PL2303::addtoQueue( CirQueue *Queue, UInt8 *Buff
 //
 /****************************************************************************************************/
 
-size_t nl_bjaelectronics_driver_PL2303::removefromQueue( CirQueue *Queue, UInt8 *Buffer, size_t MaxSize )
+size_t osx_wch_driver_ch341::removefromQueue( CirQueue *Queue, UInt8 *Buffer, size_t MaxSize )
 {
     size_t      BytesReceived = 0;
     UInt8       Value;
@@ -3923,7 +3632,7 @@ size_t nl_bjaelectronics_driver_PL2303::removefromQueue( CirQueue *Queue, UInt8 
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::FreeSpaceinQueue
+//      Method:     osx_wch_driver_ch341::FreeSpaceinQueue
 //
 //      Inputs:     Queue - the queue to be queried
 //
@@ -3933,18 +3642,18 @@ size_t nl_bjaelectronics_driver_PL2303::removefromQueue( CirQueue *Queue, UInt8 
 //
 /****************************************************************************************************/
 
-size_t nl_bjaelectronics_driver_PL2303::freeSpaceinQueue( CirQueue *Queue )
+size_t osx_wch_driver_ch341::freeSpaceinQueue( CirQueue *Queue )
 {
     size_t  retVal = 0;
     DEBUG_IOLog(6,"%s(%p)::FreeSpaceinQueue\n", getName(), this );
 	
     if( !(fPort && fPort->serialRequestLock ) ) goto Fail;
-	DEBUG_IOLog(6,"nl_bjaelectronics_driver_PL2303::freeSpaceinQueue IOLockLock( port->serialRequestLock );\n");
+	DEBUG_IOLog(6,"osx_wch_driver_ch341::freeSpaceinQueue IOLockLock( port->serialRequestLock );\n");
 
 	IOLockLock( fPort->serialRequestLock );
 	
     retVal = Queue->Size - Queue->InQueue;
- 	DEBUG_IOLog(6,"nl_bjaelectronics_driver_PL2303::freeSpaceinQueue IOLockUnLock( port->serialRequestLock );\n");
+ 	DEBUG_IOLog(6,"osx_wch_driver_ch341::freeSpaceinQueue IOLockUnLock( port->serialRequestLock );\n");
    
     IOLockUnlock(fPort->serialRequestLock);
     
@@ -3955,7 +3664,7 @@ Fail:
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::UsedSpaceinQueue
+//      Method:     osx_wch_driver_ch341::UsedSpaceinQueue
 //
 //      Inputs:     Queue - the queue to be queried
 //
@@ -3965,7 +3674,7 @@ Fail:
 //
 /****************************************************************************************************/
 
-size_t nl_bjaelectronics_driver_PL2303::usedSpaceinQueue( CirQueue *Queue )
+size_t osx_wch_driver_ch341::usedSpaceinQueue( CirQueue *Queue )
 {
     DEBUG_IOLog(6,"%s(%p)::UsedSpaceinQueue\n", getName(), this );
 
@@ -3975,7 +3684,7 @@ size_t nl_bjaelectronics_driver_PL2303::usedSpaceinQueue( CirQueue *Queue )
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::GetQueueSize
+//      Method:     osx_wch_driver_ch341::GetQueueSize
 //
 //      Inputs:     Queue - the queue to be queried
 //
@@ -3985,7 +3694,7 @@ size_t nl_bjaelectronics_driver_PL2303::usedSpaceinQueue( CirQueue *Queue )
 //
 /****************************************************************************************************/
 
-size_t nl_bjaelectronics_driver_PL2303::getQueueSize( CirQueue *Queue )
+size_t osx_wch_driver_ch341::getQueueSize( CirQueue *Queue )
 {
     DEBUG_IOLog(4,"%s(%p)::GetQueueSize\n", getName(), this );
 
@@ -3995,7 +3704,7 @@ size_t nl_bjaelectronics_driver_PL2303::getQueueSize( CirQueue *Queue )
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::GetQueueStatus
+//      Method:     osx_wch_driver_ch341::GetQueueStatus
 //
 //      Inputs:     Queue - the queue to be queried
 //
@@ -4005,7 +3714,7 @@ size_t nl_bjaelectronics_driver_PL2303::getQueueSize( CirQueue *Queue )
 //
 /****************************************************************************************************/
 
- QueueStatus nl_bjaelectronics_driver_PL2303::getQueueStatus( CirQueue *Queue )
+ QueueStatus osx_wch_driver_ch341::getQueueStatus( CirQueue *Queue )
  {
 	 if ( (Queue->NextChar == Queue->LastChar) && Queue->InQueue )
 		 return kQueueFull;
@@ -4018,7 +3727,7 @@ size_t nl_bjaelectronics_driver_PL2303::getQueueSize( CirQueue *Queue )
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::CheckQueues
+//      Method:     osx_wch_driver_ch341::CheckQueues
 //
 //      Inputs:     port - the port to check
 //
@@ -4028,7 +3737,7 @@ size_t nl_bjaelectronics_driver_PL2303::getQueueSize( CirQueue *Queue )
 //
 /****************************************************************************************************/
 
-void nl_bjaelectronics_driver_PL2303::checkQueues( PortInfo_t *port )
+void osx_wch_driver_ch341::checkQueues( PortInfo_t *port )
 {
     unsigned long   Used;
     unsigned long   Free;
@@ -4167,7 +3876,7 @@ void nl_bjaelectronics_driver_PL2303::checkQueues( PortInfo_t *port )
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::SetUpTransmit
+//      Method:     osx_wch_driver_ch341::SetUpTransmit
 //
 //      Inputs:
 //
@@ -4177,7 +3886,7 @@ void nl_bjaelectronics_driver_PL2303::checkQueues( PortInfo_t *port )
 //
 /****************************************************************************************************/
 
-bool nl_bjaelectronics_driver_PL2303::setUpTransmit( void )
+bool osx_wch_driver_ch341::setUpTransmit( void )
 {	
     size_t      count = 0;
     size_t      data_Length = 0;
@@ -4247,7 +3956,7 @@ bool nl_bjaelectronics_driver_PL2303::setUpTransmit( void )
 
 /****************************************************************************************************/
 //
-//      Method:     nl_bjaelectronics_driver_PL2303::setControlLines
+//      Method:     osx_wch_driver_ch341::setControlLines
 //
 //      Inputs:     the Port and state
 //
@@ -4256,31 +3965,25 @@ bool nl_bjaelectronics_driver_PL2303::setUpTransmit( void )
 //      Desc:       set control lines of the serial port ( DTR and RTS )
 //
 /****************************************************************************************************/
-IOReturn nl_bjaelectronics_driver_PL2303::setControlLines( PortInfo_t *port ){
+IOReturn osx_wch_driver_ch341::setControlLines( PortInfo_t *port ){
 	UInt32 state = port->State;
 	IOReturn rtn;
-	IOUSBDevRequest request;
 
-    DEBUG_IOLog(4,"%s(%p)::setControlLines state %p \n", getName(), this, state );
+    DEBUG_IOLog(4,"%s(%p)::setControlLines state %u \n", getName(), this, state );
 	
     UInt8 value=0;
 
-    if (state & PD_RS232_S_DTR)  { value |= kCONTROL_DTR;
+    if (state & PD_RS232_S_DTR)  {
+        value |= CH341_BIT_DTR;
 	    DEBUG_IOLog(5,"setControlLines DTR ON \n" );
-}
-    if (state & PD_RS232_S_RFR)  {value |= kCONTROL_RTS;
-    	    DEBUG_IOLog(5,"setControlLines RTS ON \n" );
-}
-	
-
-	request.bmRequestType = USBmakebmRequestType(kUSBOut, kUSBClass, kUSBInterface);
-    request.bRequest = SET_CONTROL_REQUEST;
-	request.wValue =  value; 
-	request.wIndex = 0;
-	request.wLength = 0;
-	request.pData = NULL;
-	rtn =  fpDevice->DeviceRequest(&request);
-	DEBUG_IOLog(4,"%s(%p)::setControlLines - return: %p \n", getName(), this,  rtn);
+    }
+    if (state & PD_RS232_S_RFR)  {
+        value |= CH341_BIT_RTS;
+        DEBUG_IOLog(5,"setControlLines RTS ON \n" );
+    }
+    port->LineControl = value;
+	rtn = ch341_set_handshake(port->LineControl);
+	DEBUG_IOLog(4,"%s(%p)::setControlLines - return: %d \n", getName(), this,  rtn);
 	
 	return rtn;
 }/* end setControlLines */
@@ -4294,7 +3997,7 @@ IOReturn nl_bjaelectronics_driver_PL2303::setControlLines( PortInfo_t *port ){
 //	{(LowWater-BIGGEST_EVENT) ≤ HighWater ≤ (size-BIGGEST_EVENT)} must be enforced.
 
 
-UInt32 nl_bjaelectronics_driver_PL2303::generateRxQState( PortInfo_t *port )
+UInt32 osx_wch_driver_ch341::generateRxQState( PortInfo_t *port )
 {
     IOLog("%s(%p)::generateRxQState\n", getName(), this );
 
@@ -4341,40 +4044,3 @@ UInt32 nl_bjaelectronics_driver_PL2303::generateRxQState( PortInfo_t *port )
     return state;
 }
 
-/****************************************************************************************************/
-//
-//		Function:	SetBreak
-//
-//		Inputs:		Channel - The port
-//				break - true(send break), false(clear break)
-//
-//		Outputs:	
-//
-//		Desc:		Set and clear line break.
-//
-/****************************************************************************************************/
-
-IOReturn nl_bjaelectronics_driver_PL2303::setBreak( bool data){
-	UInt16 value;
-	IOReturn rtn;
-	IOUSBDevRequest request;
-	
-
-	DEBUG_IOLog(4,"%s(%p)::setBreak - data: %p \n", getName(), this,  data);
-
-	if (data == 0)
-		value = BREAK_OFF;
-	else
-		value = BREAK_ON;
-
-	request.bmRequestType = USBmakebmRequestType(kUSBOut, kUSBClass, kUSBInterface);
-    request.bRequest = BREAK_REQUEST;
-	request.wValue =  value; 
-	request.wIndex = 0;
-	request.wLength = 0;
-	request.pData = NULL;
-
-	rtn =  fpDevice->DeviceRequest(&request);
-	DEBUG_IOLog(4,"%s(%p)::setBreak - return: %p \n", getName(), this,  rtn);
-	return rtn;
-}

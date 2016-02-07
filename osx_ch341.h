@@ -1,8 +1,8 @@
 /*
- * osx_pl2303.h Prolific PL2303 USB to serial adaptor driver for OS X
+ * osx_ch341.h Winchiphead CH341 USB to serial adaptor driver for OS X
  *
- * Copyright (c) 2006 BJA Electronics, Jeroen Arnoldus (opensource@bja-electronics.nl)
- * 
+ * Copyright 2015, YuXiang Zhang <zz593141477@gmail.com>
+ *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
@@ -18,28 +18,44 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  * Driver is inspired by the following projects:
- * - Linux kernel PL2303.c Copyright (C) 2001-2004 Greg Kroah-Hartman (greg@kroah.com)
- *                         Copyright (C) 2003 IBM Corp.
- * - Apple16x50Serial Copyright (c) 1997-2003 Apple Computer, Inc. All rights reserved.
- *                    Copyright (c) 1994-1996 NeXT Software, Inc.  All rights reserved.
- * - AppleRS232Serial Copyright (c) 2002 Apple Computer, Inc. All rights reserved.
- * - AppleUSBIrda Copyright (c) 2000 Apple Computer, Inc. All rights reserved.
- *
+ * - osx-pl2303            Copyright (c) 2006 BJA Electronics, Jeroen Arnoldus (opensource@bja-electronics.nl)
+ * - Linux kernel ch341.c  Copyright 2007, Frank A Kingswood <frank@kingswood-consulting.co.uk>
+ *                         Copyright 2007, Werner Cornelius <werner@cornelius-consult.de>
+ *                         Copyright 2009, Boris Hajduk <boris@hajduk.org>
  */
+
+//To enable logging remove comments from #define DEBUG and #define DATALOG
+//Use USB Prober to monitor the logs.
+#define DEBUG  1
+//#define DATALOG
  
 #include <IOKit/IOService.h>
 #include <IOKit/serial/IOSerialDriverSync.h>
 #include <IOKit/serial/IORS232SerialStreamSync.h>
-#include <IOKit/usb/IOUSBDevice.h> 
+#include <IOKit/usb/IOUSBDevice.h>
 
-#define PROLIFIC_REV_H			0x0202
-#define PROLIFIC_REV_X			0x0300
-#define PROLIFIC_REV_HX_CHIP_D	0x0400
-#define PROLIFIC_REV_1			0x0001
 
-#define baseName        "PL2303-"
+#if DEBUG
+#define DEBUG_IOLog(level,args...) IOLog ("ch341: "  args)
+#else
+#define DEBUG_IOLog(args...)
+#endif
 
-#define defaultName     "PL2303 Device"
+
+#ifdef DATALOG
+#define DATA_IOLog(args...)	USBLog (args)
+#else
+#define DATA_IOLog(args...)
+#endif
+
+
+#define super IOSerialDriverSync
+
+#define FIX_PARITY_PROCESSING 0
+
+#define baseName        "CH341-"
+
+#define defaultName     "CH341 Device"
 #define productNameLength   32                  // Arbitrary length
 #define propertyTag     "Product Name"
 
@@ -131,10 +147,6 @@
 #define kRxQueueState ((UInt32)( PD_S_RXQ_EMPTY | PD_S_RXQ_LOW_WATER | PD_S_RXQ_HIGH_WATER | PD_S_RXQ_FULL ))
 #define kTxQueueState ((UInt32)( PD_S_TXQ_EMPTY | PD_S_TXQ_LOW_WATER | PD_S_TXQ_HIGH_WATER | PD_S_TXQ_FULL ))
 
-#define kCONTROL_DTR		0x01
-#define kCONTROL_RTS		0x02
-
-
 enum tXO_State {
     kXOnSent = -2,
     kXOffSent = -1,
@@ -143,74 +155,20 @@ enum tXO_State {
     kXOnNeeded = 2
 } ;
 
-//#define IDLE_XO          0
-//#define NEEDS_XOFF       1
-//#define SENT_XOFF       -1
-//#define NEEDS_XON        2
-//#define SENT_XON        -2
 
-#define kStateTransientMask	0x74
-#define kBreakError			0x04
-#define kFrameError			0x10
-#define kParityError		0x20
-#define kOverrunError		0x40
-
-#define kCTS				0x80
-#define kDSR				0x02
-#define kRI					0x08
-#define kDCD				0x01
 #define kHandshakeInMask	((UInt32)( PD_RS232_S_CTS | PD_RS232_S_DSR | PD_RS232_S_CAR | PD_RS232_S_RI  )) 
 
 
 #define INTERRUPT_BUFF_SIZE 10
 #define USBLapPayLoad       2048
 
-#define kUART_STATE			0x08
+#define VENDOR_WRITE_REQUEST_TYPE	USBmakebmRequestType(kUSBOut,kUSBVendor,kUSBDevice)
+#define VENDOR_READ_REQUEST_TYPE	USBmakebmRequestType(kUSBIn,kUSBVendor,kUSBDevice) 
 
-#define SET_LINE_REQUEST_TYPE		0x21
-#define SET_LINE_REQUEST			0x20
-
-#define SET_CONTROL_REQUEST_TYPE	0x21
-#define SET_CONTROL_REQUEST			0x22
-#define CONTROL_DTR					0x01
-#define CONTROL_RTS					0x02
-
-#define BREAK_REQUEST_TYPE			0x21
-#define BREAK_REQUEST				0x23	
-#define BREAK_ON					0xffff
-#define BREAK_OFF					0x0000
-
-#define GET_LINE_REQUEST_TYPE		0xa1
-#define GET_LINE_REQUEST			0x21
-
-#define VENDOR_WRITE_REQUEST_TYPE	0x40
-#define VENDOR_WRITE_REQUEST		0x01
-
-#define VENDOR_READ_REQUEST_TYPE	0xc0
-#define VENDOR_READ_REQUEST			0x01
-
-#define SIEMENS_VENDOR_ID			0x11f5
-#define SIEMENS_PRODUCT_ID_X65		0x0003
 
 /*
  * Device Configuration Registers (DCR0, DCR1, DCR2)
 */
-
-#define SET_DCR0                                0x00
-#define GET_DCR0                                0x80
-#define DCR0_INIT                               0x01
-#define DCR0_INIT_H                             0x41
-#define DCR0_INIT_X                             0x61
-
-#define SET_DCR1                                0x01
-#define GET_DCR1                                0x81
-#define DCR1_INIT_H                             0x80
-#define DCR1_INIT_X                             0x00
-
-#define SET_DCR2                                0x02
-#define GET_DCR2                                0x82
-#define DCR2_INIT_H                             0x24
-#define DCR2_INIT_X                             0x44
  
 /*
  * On-chip Date Buffers:
@@ -218,13 +176,45 @@ enum tXO_State {
 #define RESET_DOWNSTREAM_DATA_PIPE              0x08
 #define RESET_UPSTREAM_DATA_PIPE                0x09
 
-enum pl2303_type {
-	unknown,
-	type_1,		/* don't know the difference between type 0 and */
-	rev_X,		/* type 1, until someone from prolific tells us... */
-	rev_HX,		/* HX version of the pl2303 chip */
-	rev_H
-};
+#define CH341_BIT_RTS (1 << 6)
+#define CH341_BIT_DTR (1 << 5)
+
+/******************************/
+/* interrupt pipe definitions */
+/******************************/
+/* always 4 interrupt bytes */
+/* first irq byte normally 0x08 */
+/* second irq byte base 0x7d + below */
+/* third irq byte base 0x94 + below */
+/* fourth irq byte normally 0xee */
+
+/* second interrupt byte */
+#define CH341_MULT_STAT 0x04 /* multiple status since last interrupt event */
+
+/* status returned in third interrupt answer byte, inverted in data
+ from irq */
+#define CH341_BIT_CTS 0x01
+#define CH341_BIT_DSR 0x02
+#define CH341_BIT_RI  0x04
+#define CH341_BIT_DCD 0x08
+#define CH341_BITS_MODEM_STAT 0x0f /* all bits */
+
+
+#define CH341_BAUDBASE_FACTOR 1532620800
+#define CH341_BAUDBASE_DIVMAX 3
+#define DEFAULT_BAUD_RATE 9600
+
+/* Break support - the information used to implement this was gleaned from
+ * the Net/FreeBSD uchcom.c driver by Takanori Watanabe.  Domo arigato.
+ */
+
+#define CH341_REQ_WRITE_REG    0x9A
+#define CH341_REQ_READ_REG     0x95
+#define CH341_REG_BREAK1       0x05
+#define CH341_REG_BREAK2       0x18
+#define CH341_NBREAK_BITS_REG1 0x01
+#define CH341_NBREAK_BITS_REG2 0x40
+
 
 
 typedef struct BufferMarks
@@ -282,7 +272,6 @@ static inline mach_timespec long2tval( unsigned long val )
 
 typedef struct
 {
-	enum pl2303_type type;
     UInt32          State;
 	UInt8          lineState;
 
@@ -314,6 +303,8 @@ typedef struct
     UInt8           XOFFchar;
     UInt32          SWspecial[ 0x100 >> SPECIAL_SHIFT ];
     UInt32          FlowControl;    // notify-on-delta & auto_control
+    
+    UInt8           LineControl;
 	
     tXO_State       RXOstate;    /* Indicates our receive state.    */
     tXO_State       TXOstate;    /* Indicates our transmit state, if we have received any Flow Control. */
@@ -343,9 +334,9 @@ typedef struct
 	
 } PortInfo_t;
 
-class nl_bjaelectronics_driver_PL2303 : public IOSerialDriverSync
+class osx_wch_driver_ch341 : public IOSerialDriverSync
 {
-	OSDeclareDefaultStructors(nl_bjaelectronics_driver_PL2303)
+	OSDeclareDefaultStructors(osx_wch_driver_ch341)
 private:
     UInt32          fCount;         // usb write length
     UInt8           fSessions;      // Active sessions (count of opens on /dev/tty entries)
@@ -422,8 +413,6 @@ public:
     virtual	IOReturn	enqueueData(UInt8 *buffer, UInt32 size, UInt32 *count, bool sleep, void *refCon);
     virtual	IOReturn	dequeueData(UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min, void *refCon);
 
-    virtual	IOWorkLoop	*getWorkLoop() const;
-
 	// Static stubs for IOCommandGate::runAction
         
     static	IOReturn	acquirePortAction(OSObject *owner, void *arg0, void *arg1, void *, void *);
@@ -496,11 +485,16 @@ private:
     bool            allocateRingBuffer( CirQueue *Queue, size_t BufferSize );
     void            freeRingBuffer( CirQueue *Queue );
 
+    IOReturn        ch341_control_out(UInt8 req, UInt16 value, UInt16 index);
+    IOReturn        ch341_control_in(UInt8 req, UInt16 value, UInt16 index, void *buf, UInt16 len, UInt32 *lenDone = NULL);
+
     /**** FlowControl ****/
 	IOReturn        setControlLines( PortInfo_t *port );
+    IOReturn        ch341_set_handshake(UInt8 control);
     UInt32			generateRxQState( PortInfo_t *port );
 	IOReturn		setBreak( bool data);
 	
-	IOReturn        vendor_write0( UInt16 value, UInt16 index);
+    IOReturn        ch341_set_baudrate(UInt32 baud_rate);
+    IOReturn        ch341_get_status(PortInfo_t *port);
 
 };

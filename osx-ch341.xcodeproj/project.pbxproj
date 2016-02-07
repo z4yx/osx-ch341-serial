@@ -11,6 +11,7 @@
 		108CB66F13DB7BE200AD6C02 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 089C167DFE841241C02AAC07 /* InfoPlist.strings */; };
 		108CB67013DB7BE200AD6C02 /* COPYING in Resources */ = {isa = PBXBuildFile; fileRef = 906D8A5709AF0FBC00CAB1B1 /* COPYING */; };
 		108CB67213DB7BE200AD6C02 /* osx_ch341.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1A224C3FFF42367911CA2CB7 /* osx_ch341.cpp */; settings = {ATTRIBUTES = (); }; };
+		1F1C550C1C67517200C1C889 /* osx_ch341_dev.cpp in Sources */ = {isa = PBXBuildFile; fileRef = 1F1C550B1C67517200C1C889 /* osx_ch341_dev.cpp */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -18,6 +19,7 @@
 		108CB67A13DB7BE200AD6C02 /* osx-ch341.kext */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "osx-ch341.kext"; sourceTree = BUILT_PRODUCTS_DIR; };
 		1A224C3EFF42367911CA2CB7 /* osx_ch341.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = osx_ch341.h; sourceTree = "<group>"; };
 		1A224C3FFF42367911CA2CB7 /* osx_ch341.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = osx_ch341.cpp; sourceTree = "<group>"; };
+		1F1C550B1C67517200C1C889 /* osx_ch341_dev.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; path = osx_ch341_dev.cpp; sourceTree = "<group>"; };
 		32D94FCF0562CBF700B6AF17 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		8DA8362C06AD9B9200E5AC22 /* Kernel.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Kernel.framework; path = /System/Library/Frameworks/Kernel.framework; sourceTree = "<absolute>"; };
 		906D8A5709AF0FBC00CAB1B1 /* COPYING */ = {isa = PBXFileReference; fileEncoding = 30; lastKnownFileType = text; path = COPYING; sourceTree = "<group>"; };
@@ -68,6 +70,7 @@
 			children = (
 				1A224C3EFF42367911CA2CB7 /* osx_ch341.h */,
 				1A224C3FFF42367911CA2CB7 /* osx_ch341.cpp */,
+				1F1C550B1C67517200C1C889 /* osx_ch341_dev.cpp */,
 			);
 			name = Source;
 			sourceTree = "<group>";
@@ -157,6 +160,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1F1C550C1C67517200C1C889 /* osx_ch341_dev.cpp in Sources */,
 				108CB67213DB7BE200AD6C02 /* osx_ch341.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -204,6 +208,7 @@
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				MACOSX_DEPLOYMENT_TARGET = "";
 				SDKROOT = "$(DEVELOPER_SDK_DIR)/MacOSX10.4u.sdk";
+				USER_HEADER_SEARCH_PATHS = "";
 			};
 			name = "Release-10.7-universal";
 		};
@@ -234,6 +239,7 @@
 				MACOSX_DEPLOYMENT_TARGET = "";
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = "$(DEVELOPER_SDK_DIR)/MacOSX10.4u.sdk";
+				USER_HEADER_SEARCH_PATHS = "";
 			};
 			name = Debug;
 		};
