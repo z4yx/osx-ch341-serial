@@ -2994,7 +2994,7 @@ void osx_wch_driver_ch341::interruptReadComplete( void *obj, void *param, IORetu
 	{
 		
 		dLen = length - remaining;
-    	if (dLen != length)
+    	if (dLen < 4)
 		{
 			DEBUG_IOLog(1,"osx_wch_driver_ch341::interruptReadComplete wrong buffersize");
 		} else {
@@ -3006,6 +3006,7 @@ void osx_wch_driver_ch341::interruptReadComplete( void *obj, void *param, IORetu
 			buf = &me->fpinterruptPipeBuffer[0];
             
             UInt8 status;
+            UInt8 delta;
             status = ~buf[2] & CH341_BITS_MODEM_STAT;
 #ifdef DATALOG
 
@@ -3016,6 +3017,7 @@ void osx_wch_driver_ch341::interruptReadComplete( void *obj, void *param, IORetu
             if (buf[1] & CH341_MULT_STAT)
                 DEBUG_IOLog(4, "osx_wch_driver_ch341::interruptReadComplete - multiple status change\n");
             
+            delta = me->fPort->lineState ^ status;
 			me->fPort->lineState =  status;
 
 			if (status & CH341_BIT_CTS) stat |= PD_RS232_S_CTS;
