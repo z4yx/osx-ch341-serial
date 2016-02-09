@@ -1,7 +1,7 @@
 /*
  * osx_ch341.cpp Winchiphead CH341 USB to serial adaptor driver for OS X
  *
- * Copyright 2015, YuXiang Zhang <zz593141477@gmail.com>
+ * Copyright 2015-2016, YuXiang Zhang <zz593141477@gmail.com>
  * 
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -18,7 +18,8 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
  *
  * Driver is inspired by the following projects:
- * - osx-pl2303            Copyright (c) 2006 BJA Electronics, Jeroen Arnoldus (opensource@bja-electronics.nl)
+ * - osx-pl2303            Copyright (c) 2013 NoZAP B.V., Jeroen Arnoldus (opensource@nozap.me, http://www.nozap.me http://www.nozap.nl )
+ *                         Copyright (c) 2006 BJA Electronics, Jeroen Arnoldus (opensource@bja-electronics.nl)
  * - Linux kernel ch341.c  Copyright 2007, Frank A Kingswood <frank@kingswood-consulting.co.uk>
  *                         Copyright 2007, Werner Cornelius <werner@cornelius-consult.de>
  *                         Copyright 2009, Boris Hajduk <boris@hajduk.org>
@@ -177,7 +178,7 @@ bool osx_wch_driver_ch341::start(IOService *provider)
 
 	fUSBStarted = true;  
 	
-	DEBUG_IOLog(3,"%s(%p)::start - Allocate resources \n", getName(), this);
+	DEBUG_IOLog(5,"%s(%p)::start - Allocate resources \n", getName(), this);
 
 		
 	return true;
@@ -191,7 +192,7 @@ Fail:
     if (fCommandGate)
     {
         if(fWorkLoop){
-            DEBUG_IOLog(1,"%s(%p)::start - removeEventSource\n", getName(), this);
+            DEBUG_IOLog(5,"%s(%p)::start - removeEventSource\n", getName(), this);
             fWorkLoop->removeEventSource(fCommandGate);
         }
         fCommandGate->release();
@@ -233,7 +234,7 @@ void osx_wch_driver_ch341::stop( IOService *provider )
     if (fCommandGate)
     {
         if(fWorkLoop){
-            DEBUG_IOLog(1,"%s(%p)::stop - removeEventSource\n", getName(), this);
+            DEBUG_IOLog(5,"%s(%p)::stop - removeEventSource\n", getName(), this);
             fWorkLoop->removeEventSource(fCommandGate);
         }
         fCommandGate->release();
@@ -290,7 +291,7 @@ IOReturn osx_wch_driver_ch341::privateWatchState( PortInfo_t *port, UInt32 *stat
     bool                autoActiveBit   = false;
     IOReturn            rtn             = kIOReturnSuccess;
 	
-    DEBUG_IOLog(4,"%s(%p)::privateWatchState\n", getName(), this);
+    DEBUG_IOLog(5,"%s(%p)::privateWatchState\n", getName(), this);
 	
     watchState              = *state;
 
@@ -355,7 +356,7 @@ IOReturn osx_wch_driver_ch341::privateWatchState( PortInfo_t *port, UInt32 *stat
 	
     port->WatchStateMask = 0;
 	fCommandGate->commandWakeup((void *)&port->State);
-	DEBUG_IOLog(4,"%s(%p)::privateWatchState end\n", getName(), this);
+	DEBUG_IOLog(5,"%s(%p)::privateWatchState end\n", getName(), this);
  
     return rtn;
     
@@ -380,7 +381,7 @@ bool osx_wch_driver_ch341::allocateResources( void )
     bool                        goodCall;   // return flag fm Interface call
 	vm_size_t					aBuffSize;
 	
-	DEBUG_IOLog(4,"%s(%p)::allocateResources\n", getName(), this);
+	DEBUG_IOLog(5,"%s(%p)::allocateResources\n", getName(), this);
 	
     // Open all the end points
     if (!fpInterface) {
@@ -499,7 +500,7 @@ Fail:
 
 void osx_wch_driver_ch341::releaseResources( void )
 {
-    DEBUG_IOLog(4,"osx_wch_driver_ch341::releaseResources\n");
+    DEBUG_IOLog(5,"osx_wch_driver_ch341::releaseResources\n");
     
     if ( fpInterface ) { 
 		fpInterface->close( this ); 
@@ -528,7 +529,7 @@ void osx_wch_driver_ch341::releaseResources( void )
 void osx_wch_driver_ch341::stopSerial( bool resetDevice )
 {
 
-	DEBUG_IOLog(1,"%s(%p)::stopSerial\n", getName(), this);
+	DEBUG_IOLog(4,"%s(%p)::stopSerial\n", getName(), this);
     stopPipes();                            // stop reading on the usb pipes
 
     if (fpPipeOutMDP != NULL)               // better test for releaseResources?
@@ -538,7 +539,7 @@ void osx_wch_driver_ch341::stopSerial( bool resetDevice )
 
 	
 
-	DEBUG_IOLog(1,"%s(%p)::stopSerial stopSerial succeed\n", getName(), this);
+	DEBUG_IOLog(5,"%s(%p)::stopSerial stopSerial succeed\n", getName(), this);
     
 Fail:
 		return;
@@ -563,7 +564,7 @@ IOReturn osx_wch_driver_ch341::CheckSerialState( void )
 //			(fPowerState == kIrDAPowerOnState) &   // powered on by the power manager, and
 	(fSessions > 0); // one of the clients too
 	
-    DEBUG_IOLog(4,"%s(%p)::CheckSerialState\n", getName(), this);    
+    DEBUG_IOLog(5,"%s(%p)::CheckSerialState\n", getName(), this);
     if ( newState ){       
 		fTerminate = false;
 		if ( !startSerial() )
@@ -858,12 +859,12 @@ void osx_wch_driver_ch341::SetStructureDefaults( PortInfo_t *port, bool Init )
 {
     UInt32  tmp;
     
-    DEBUG_IOLog(1,"%s(%p)::SetStructureDefaults\n", getName(), this);
+    DEBUG_IOLog(4,"%s(%p)::SetStructureDefaults\n", getName(), this);
 	
 	/* These are initialized when the port is created and shouldn't be reinitialized. */
     if ( Init )
 	{
-		DEBUG_IOLog(1,"%s(%p)::SetStructureDefaults INIT\n", getName(), this);
+		DEBUG_IOLog(4,"%s(%p)::SetStructureDefaults INIT\n", getName(), this);
 
 		port->FCRimage          = 0x00;
 		port->IERmask           = 0x00;
@@ -951,7 +952,7 @@ bool osx_wch_driver_ch341::createSerialStream()
     if (!allocateRingBuffer(&(fPort->TX), fPort->TXStats.BufferSize) ||
 		!allocateRingBuffer(&(fPort->RX), fPort->RXStats.BufferSize)) 
 	{
-		DEBUG_IOLog(4,"%s(%p)::createSerialStream init ringbuffers  failed\n", getName(), this);
+		DEBUG_IOLog(3,"%s(%p)::createSerialStream init ring buffers failed\n", getName(), this);
 		return false;
 	}
 	
@@ -1198,12 +1199,12 @@ IOReturn err = kIOReturnSuccess;
 			break;
 						
 		case kIOUSBMessagePortHasBeenReset:
-			DEBUG_IOLog(1,"%s(%p)::message - kIOUSBMessagePortHasBeenReset\n", getName(), this);
+			DEBUG_IOLog(3,"%s(%p)::message - kIOUSBMessagePortHasBeenReset\n", getName(), this);
 
 				
 			if (fpDevice->GetNumConfigurations() < 1)
 				{
-				DEBUG_IOLog(1,"%s(%p)::message - no composite configurations\n", getName(), this);
+				DEBUG_IOLog(3,"%s(%p)::message - no composite configurations\n", getName(), this);
 				err = kIOUSBConfigNotFound;
 				goto Fail;
 				}
@@ -1217,7 +1218,7 @@ IOReturn err = kIOReturnSuccess;
 
 			fUSBStarted = true;  
 	
-			DEBUG_IOLog(1,"%s(%p)::message - Port reconfigurated\n", getName(), this);
+			DEBUG_IOLog(3,"%s(%p)::message - Port reconfigurated\n", getName(), this);
 
 Fail:
 			return err;
@@ -1467,7 +1468,7 @@ IOReturn osx_wch_driver_ch341::acquirePortGated( bool sleep, void *refCon )
 IOReturn osx_wch_driver_ch341::releasePort(void *refCon)
 {
     IOReturn	ret;
-    DEBUG_IOLog(4,"%s(%p)::releasePort\n", getName(), this);
+//    DEBUG_IOLog(4,"%s(%p)::releasePort\n", getName(), this);
     
     retain();
     ret = fCommandGate->runAction(releasePortAction, (void *)refCon);
@@ -1487,7 +1488,7 @@ IOReturn osx_wch_driver_ch341::releasePort(void *refCon)
 
 IOReturn osx_wch_driver_ch341::releasePortAction(OSObject *owner, void *arg0, void *, void *, void *)
 {
-    DEBUG_IOLog(4,"osx_wch_driver_ch341::releasePortAction\n");
+//    DEBUG_IOLog(4,"osx_wch_driver_ch341::releasePortAction\n");
 
     return ((osx_wch_driver_ch341 *)owner)->releasePortGated((void *) arg0);
 }/* end releasePortAction */
@@ -1559,7 +1560,7 @@ IOReturn osx_wch_driver_ch341::setState(UInt32 state, UInt32 mask, void *refCon)
 {
     PortInfo_t *port = (PortInfo_t *) refCon;
     IOReturn	ret;
-    DEBUG_IOLog(4,"%s(%p)::setState state 0x%x mask 0x%x\n", getName(), this, state, mask);
+    DEBUG_IOLog(6,"%s(%p)::setState state 0x%x mask 0x%x\n", getName(), this, state, mask);
     
 	// Cannot acquire or activate via setState
     
@@ -1578,7 +1579,7 @@ IOReturn osx_wch_driver_ch341::setState(UInt32 state, UInt32 mask, void *refCon)
 	if (port->lineState & CH341_BIT_DSR) state |= PD_RS232_S_DSR; else state &= ~( PD_RS232_S_DSR );
 	if (port->lineState & CH341_BIT_RI)  state |= PD_RS232_S_RI; else state &= ~( PD_RS232_S_RI );
 	if (port->lineState & CH341_BIT_DCD) state |= PD_RS232_S_CAR; else state &= ~( PD_RS232_S_CAR );
-    DEBUG_IOLog(5,"%s(%p)::setState linestatestate 0x%x mask 0x%x state 0x%x\n", getName(), this, port->lineState, mask, state);
+    DEBUG_IOLog(6,"%s(%p)::setState linestatestate 0x%x mask 0x%x state 0x%x\n", getName(), this, port->lineState, mask, state);
 
 	if (mask)
 	{
@@ -1630,7 +1631,7 @@ IOReturn osx_wch_driver_ch341::setStateAction(OSObject *owner, void *arg0, void 
 IOReturn osx_wch_driver_ch341::setStateGated( UInt32 state, UInt32 mask, void *refCon )
 {
     PortInfo_t *port = (PortInfo_t *) refCon;
-    DEBUG_IOLog(4,"%s(%p)::setStateGated\n", getName(), this);
+    DEBUG_IOLog(6,"%s(%p)::setStateGated\n", getName(), this);
         
     if ( mask & (PD_S_ACQUIRED | PD_S_ACTIVE | (~EXTERNAL_MASK)) )
 		return kIOReturnBadArgument;
@@ -1833,7 +1834,7 @@ IOReturn osx_wch_driver_ch341::executeEventGated( UInt32 event, UInt32 data, voi
     IOReturn    ret = kIOReturnSuccess;
     UInt32      state, delta, old;
 
-	DEBUG_IOLog(4,"%s(%p)::executeEventGated\n", getName(), this);
+	DEBUG_IOLog(4,"%s(%p)::executeEventGated event=0x%x\n", getName(), this, event);
 	   
     delta = 0;
     state = readPortState( port );  
@@ -2373,7 +2374,7 @@ IOReturn osx_wch_driver_ch341::requestEventGated( UInt32 event, UInt32 *data, vo
 
 IOReturn osx_wch_driver_ch341::enqueueEvent( UInt32 event, UInt32 data, bool sleep, void *refCon)
 {
-	DEBUG_IOLog(2,"%s(%p)::enqueueEvent event: %u \n", getName(), this, data);
+	DEBUG_IOLog(4,"%s(%p)::enqueueEvent event: %u \n", getName(), this, data);
 	PortInfo_t  *port = (PortInfo_t *) refCon;
     IOReturn    ret = kIOReturnSuccess;
     UInt32      state, delta;
@@ -2389,7 +2390,7 @@ IOReturn osx_wch_driver_ch341::enqueueEvent( UInt32 event, UInt32 data, bool sle
     switch ( event )
 	{	
 		case PD_RS232_E_LINE_BREAK:
-			DEBUG_IOLog(2,"%s(%p)::enqueueEvent - PD_RS232_E_LINE_BREAK\n", getName(), this );
+			DEBUG_IOLog(4,"%s(%p)::enqueueEvent - PD_RS232_E_LINE_BREAK\n", getName(), this );
             state &= ~PD_RS232_S_BRK;
             delta |= PD_RS232_S_BRK;
             if (data)
@@ -2402,7 +2403,7 @@ IOReturn osx_wch_driver_ch341::enqueueEvent( UInt32 event, UInt32 data, bool sle
             setStateGated(state, delta, port); 
 			break;
 		case PD_E_DELAY:
-			DEBUG_IOLog(2,"%s(%p)::enqueueEvent - PD_E_DELAY time: %d \n", getName(), this, data );
+			DEBUG_IOLog(4,"%s(%p)::enqueueEvent - PD_E_DELAY time: %d \n", getName(), this, data );
             if (port->BreakState)					// It's the break delay in micro seconds
             {
                 IOSleep(data/1000);
@@ -2411,7 +2412,7 @@ IOReturn osx_wch_driver_ch341::enqueueEvent( UInt32 event, UInt32 data, bool sle
             }
 			break;	
 		default:
-			DEBUG_IOLog(2,"%s(%p)::enqueueEvent - unrecognized event \n", getName(), this );
+			DEBUG_IOLog(3,"%s(%p)::enqueueEvent - unrecognized event \n", getName(), this );
 			ret = kIOReturnBadArgument;
 			break;
 	}
@@ -2462,19 +2463,19 @@ IOReturn osx_wch_driver_ch341::dequeueEvent( UInt32 *event, UInt32 *data, bool s
             return rtn;
         *data = Value;
 
-        DATA_IOLog(2,"osx_wch_driver_ch341::dequeueEvent held=[0x%X]\n", Value );
+        DATA_IOLog(4,"osx_wch_driver_ch341::dequeueEvent held=[0x%X]\n", Value );
 
         if(Value == 0xff) {
             while(getBytetoQueue(&fPort->RX, &Value) == kQueueEmpty);
-            DATA_IOLog(2,"osx_wch_driver_ch341::dequeueEvent purged=[0x%X]\n", Value );
+            DATA_IOLog(4,"osx_wch_driver_ch341::dequeueEvent purged=[0x%X]\n", Value );
         }
 
         if(*event == PD_E_INTEGRITY_ERROR) {
             getBytetoQueue(&fPort->RX, &Value); // Purge marker
-            DATA_IOLog(2,"osx_wch_driver_ch341::dequeueEvent purged=[0x%X]\n", Value );
+            DATA_IOLog(4,"osx_wch_driver_ch341::dequeueEvent purged=[0x%X]\n", Value );
             while(getBytetoQueue(&fPort->RX, &Value) == kQueueEmpty)
                 IOSleep(BYTE_WAIT_PENALTY); // in case it is not yet cool
-            DATA_IOLog(2,"osx_wch_driver_ch341::dequeueEvent purged=[0x%X]\n", Value );
+            DATA_IOLog(4,"osx_wch_driver_ch341::dequeueEvent purged=[0x%X]\n", Value );
         }
 #endif
 		return kIOReturnSuccess;
@@ -2558,7 +2559,7 @@ IOReturn osx_wch_driver_ch341::enqueueDataGated( UInt8 *buffer, UInt32 size, UIn
     UInt32      state = PD_S_TXQ_LOW_WATER;
     IOReturn    rtn = kIOReturnSuccess;
 	
-    DEBUG_IOLog(1,"%s(%p)::enqueueDataGated (bytes: %d)\n", getName(), this,size);
+    DEBUG_IOLog(4,"%s(%p)::enqueueDataGated (bytes: %d)\n", getName(), this,size);
 /*	
 #ifdef DEBUG
 	UInt8 *buf;
@@ -2622,7 +2623,7 @@ IOReturn osx_wch_driver_ch341::enqueueDataGated( UInt8 *buffer, UInt32 size, UIn
 		setUpTransmit( );
 	}/* end while */
 
-    DEBUG_IOLog(4,"%s(%p)::enqueueDataGateda - Enqueue\n", getName(), this);
+    DEBUG_IOLog(5,"%s(%p)::enqueueDataGateda - Enqueue\n", getName(), this);
 
     return kIOReturnSuccess;
     
@@ -2647,7 +2648,7 @@ IOReturn osx_wch_driver_ch341::enqueueDataGated( UInt8 *buffer, UInt32 size, UIn
 IOReturn osx_wch_driver_ch341::dequeueData(UInt8 *buffer, UInt32 size, UInt32 *count, UInt32 min, void *refCon)
 {
     IOReturn 	ret;
-	DEBUG_IOLog(4,"%s(%p)::dequeueData\n", getName(), this);
+//	DEBUG_IOLog(4,"%s(%p)::dequeueData\n", getName(), this);
     
     if ((count == NULL) || (buffer == NULL) || (min > size))
         return kIOReturnBadArgument;
@@ -2671,7 +2672,7 @@ IOReturn osx_wch_driver_ch341::dequeueData(UInt8 *buffer, UInt32 size, UInt32 *c
 
 IOReturn osx_wch_driver_ch341::dequeueDataAction(OSObject *owner, void *arg0, void *arg1, void *arg2, void *arg3)
 {
-	DEBUG_IOLog(4,"osx_wch_driver_ch341::dequeueDataAction\n");
+//	DEBUG_IOLog(4,"osx_wch_driver_ch341::dequeueDataAction\n");
   
     return ((osx_wch_driver_ch341 *)owner)->dequeueDataGated((UInt8 *)arg0, (UInt32)(uintptr_t)arg1, (UInt32 *)arg2, (UInt32)(uintptr_t)arg3);
 
@@ -2809,7 +2810,7 @@ IOReturn osx_wch_driver_ch341::dequeueDataAction(OSObject *owner, void *arg0, vo
 		 
 	 }/* end while */
 
-    DEBUG_IOLog(4,"%s(%p)::dequeueDataGated -->Out Dequeue\n", getName(), this);
+    DEBUG_IOLog(5,"%s(%p)::dequeueDataGated -->Out Dequeue\n", getName(), this);
 
     return kIOReturnSuccess;
     
@@ -2867,7 +2868,7 @@ IOReturn osx_wch_driver_ch341::startTransmit(UInt32 control_length, UInt8 *contr
 {
     IOReturn    ior;
     
-	DEBUG_IOLog(1,"%s(%p)::StartTransmit\n", getName(), this);
+	DEBUG_IOLog(4,"%s(%p)::StartTransmit\n", getName(), this);
 	if ( data_length != 0 )
 	{
 		bcopy(data_buffer, &fPipeOutBuffer[0], data_length);		
@@ -2904,7 +2905,7 @@ IOReturn osx_wch_driver_ch341::startTransmit(UInt32 control_length, UInt8 *contr
 
 #endif	
     ior = fpOutPipe->Write( fpPipeOutMDP, 1000, 1000, &fWriteCompletionInfo );  // 1 second timeouts
-    DEBUG_IOLog(1,"%s(%p)::StartTransmit return value %d\n", getName(), this, ior);
+    DEBUG_IOLog(5,"%s(%p)::StartTransmit return value %d\n", getName(), this, ior);
     return ior;
     
 }/* end StartTransmission */
@@ -2925,7 +2926,7 @@ void osx_wch_driver_ch341::dataWriteComplete( void *obj, void *param, IOReturn r
 {
 
     osx_wch_driver_ch341  *me = (osx_wch_driver_ch341*)obj;
-	DEBUG_IOLog(1,"osx_wch_driver_ch341::dataWriteComplete return code c: %d, fcount: %d,  remaining: %d\n", rc, me->fCount,remaining );
+	DEBUG_IOLog(4,"osx_wch_driver_ch341::dataWriteComplete return code c: %d, fcount: %d,  remaining: %d\n", rc, me->fCount,remaining );
 
     // Boolean done = true;                // write really finished?  // use is commented out below.
     me->fWriteActive = false;
@@ -2982,7 +2983,7 @@ void osx_wch_driver_ch341::dataWriteComplete( void *obj, void *param, IOReturn r
 
 void osx_wch_driver_ch341::interruptReadComplete( void *obj, void *param, IOReturn rc, UInt32 remaining )
 {
-	DEBUG_IOLog(1,"osx_wch_driver_ch341::interruptReadComplete" );
+	DEBUG_IOLog(4,"osx_wch_driver_ch341::interruptReadComplete" );
 
 	UInt8 length = INTERRUPT_BUFF_SIZE;
 	UInt32 stat = 0;
@@ -2996,7 +2997,7 @@ void osx_wch_driver_ch341::interruptReadComplete( void *obj, void *param, IORetu
 		dLen = length - remaining;
     	if (dLen < 4)
 		{
-			DEBUG_IOLog(1,"osx_wch_driver_ch341::interruptReadComplete wrong buffersize");
+			DEBUG_IOLog(3,"osx_wch_driver_ch341::interruptReadComplete wrong buffersize");
 		} else {
 
 
@@ -3046,7 +3047,7 @@ void osx_wch_driver_ch341::interruptReadComplete( void *obj, void *param, IORetu
         me->checkQueues( port );
 #endif
     } else {
-	     DEBUG_IOLog(1,"osx_wch_driver_ch341::interruptReadComplete wrong return code: %d", rc );
+	     DEBUG_IOLog(3,"osx_wch_driver_ch341::interruptReadComplete wrong return code: %d", rc );
 	}
     return;    
 }/* end interruptReadComplete */
@@ -3118,13 +3119,13 @@ void osx_wch_driver_ch341::dataReadComplete( void *obj, void *param, IOReturn rc
 			me->checkQueues( port );
 			return;
 		} else {
-			DEBUG_IOLog(4,"osx_wch_driver_ch341::dataReadComplete dataReadComplete - queueing bulk read failed\n");
+			DEBUG_IOLog(3,"osx_wch_driver_ch341::dataReadComplete dataReadComplete - queueing bulk read failed\n");
 		}
 		
 	} else {
     Fail:
 		/* Read returned with error */
-		DEBUG_IOLog(4,"osx_wch_driver_ch341::dataReadComplete - io err %x\n",rc );
+		DEBUG_IOLog(3,"osx_wch_driver_ch341::dataReadComplete - io err %x\n",rc );
 		
 	}
 	
@@ -3151,7 +3152,7 @@ bool osx_wch_driver_ch341::allocateRingBuffer( CirQueue *Queue, size_t BufferSiz
 	// Size is ignored and kMaxCirBufferSize, which is 4096, is used.
 	// BJA Hack
 	#define kCirBufferSize 1 
-    DEBUG_IOLog(4,"%s(%p)::allocateRingBuffer\n", getName(), this );
+    DEBUG_IOLog(5,"%s(%p)::allocateRingBuffer\n", getName(), this );
     Buffer = (UInt8*)IOMalloc( kMaxCirBufferSize );
 	
     initQueue( Queue, Buffer, kMaxCirBufferSize );
@@ -3178,7 +3179,7 @@ bool osx_wch_driver_ch341::allocateRingBuffer( CirQueue *Queue, size_t BufferSiz
 
 void osx_wch_driver_ch341::freeRingBuffer( CirQueue *Queue )
 {
-    DEBUG_IOLog(4,"%s(%p)::freeRingBuffer\n", getName(), this );
+    DEBUG_IOLog(5,"%s(%p)::freeRingBuffer\n", getName(), this );
     if( !(Queue->Start) )  goto Bogus;
     
     IOFree( Queue->Start, Queue->Size );
@@ -3205,7 +3206,7 @@ Bogus:
 IOReturn osx_wch_driver_ch341::setSerialConfiguration( void )
 {
 	IOReturn rtn;
-    DEBUG_IOLog(3,"%s(%p)::setSerialConfiguration baudrate: %d \n", getName(), this, fPort->BaudRate );
+    DEBUG_IOLog(4,"%s(%p)::setSerialConfiguration baudrate: %d \n", getName(), this, fPort->BaudRate );
 	
     fCurrentBaud = fPort->BaudRate;
     
@@ -3328,7 +3329,7 @@ QueueStatus osx_wch_driver_ch341::addBytetoQueue( CirQueue *Queue, char Value )
     /* Check to see if there is space by comparing the next pointer,    */
     /* with the last, If they match we are either Empty or full, so     */
     /* check the InQueue of being zero.                 */
-    DEBUG_IOLog(4,"osx_wch_driver_ch341(%p)::AddBytetoQueue\n", this );
+    DEBUG_IOLog(5,"osx_wch_driver_ch341(%p)::AddBytetoQueue\n", this );
 	
     if ( !(fPort && fPort->serialRequestLock ) ) goto Fail;
 //	DEBUG_IOLog(2,"osx_wch_driver_ch341::addBytetoQueue IOLockLock( port->serialRequestLock );\n" );
@@ -3350,7 +3351,7 @@ QueueStatus osx_wch_driver_ch341::addBytetoQueue( CirQueue *Queue, char Value )
     if ( Queue->NextChar >= Queue->End )
 		Queue->NextChar =  Queue->Start;
 
-	DEBUG_IOLog(2,"osx_wch_driver_ch341::addBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
+	DEBUG_IOLog(5,"osx_wch_driver_ch341::addBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
 	
     IOLockUnlock( fPort->serialRequestLock);
     return kQueueNoError;
@@ -3374,7 +3375,7 @@ Fail:
 
 QueueStatus osx_wch_driver_ch341::getBytetoQueue( CirQueue *Queue, UInt8 *Value )
 {
-    DEBUG_IOLog(4,"%s(%p)::GetBytetoQueue\n", getName(), this );
+    DEBUG_IOLog(5,"%s(%p)::GetBytetoQueue\n", getName(), this );
 	
     if( !(fPort && fPort->serialRequestLock) ) goto Fail;
 //	DEBUG_IOLog(2,"osx_wch_driver_ch341::getBytetoQueue IOLockLock( port->serialRequestLock ); \n" );
@@ -3414,7 +3415,7 @@ QueueStatus osx_wch_driver_ch341::getBytetoQueue( CirQueue *Queue, UInt8 *Value 
     if ( Queue->LastChar >= Queue->End )
 		Queue->LastChar =  Queue->Start;
 	
-	DEBUG_IOLog(2,"osx_wch_driver_ch341::getBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
+	DEBUG_IOLog(5,"osx_wch_driver_ch341::getBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
 	
     IOLockUnlock(fPort->serialRequestLock);
     return kQueueNoError;
@@ -3438,10 +3439,10 @@ Fail:
 
 QueueStatus osx_wch_driver_ch341::peekBytefromQueue( CirQueue *Queue, UInt8 *Value, size_t offset = 0)
 {
-    DEBUG_IOLog(4,"%s(%p)::peekBytefromQueue\n", getName(), this );
+    DEBUG_IOLog(5,"%s(%p)::peekBytefromQueue\n", getName(), this );
 
     if( !(fPort && fPort->serialRequestLock) ) goto Fail;
-	DEBUG_IOLog(2,"osx_wch_driver_ch341::peekBytefromQueue IOLockLock( port->serialRequestLock ); \n" );
+//	DEBUG_IOLog(2,"osx_wch_driver_ch341::peekBytefromQueue IOLockLock( port->serialRequestLock ); \n" );
 
     IOLockLock( fPort->serialRequestLock );
 
@@ -3459,7 +3460,7 @@ QueueStatus osx_wch_driver_ch341::peekBytefromQueue( CirQueue *Queue, UInt8 *Val
     } else
         *Value = Queue->LastChar[offset];
 
-	DEBUG_IOLog(2,"osx_wch_driver_ch341::peekBytefromQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
+	DEBUG_IOLog(5,"osx_wch_driver_ch341::peekBytefromQueue IOLockUnLock( port->serialRequestLock ); kQueueNoError\n" );
 
     IOLockUnlock(fPort->serialRequestLock);
 
@@ -3870,7 +3871,7 @@ bool osx_wch_driver_ch341::setUpTransmit( void )
     size_t      data_Length = 0;
     UInt8       *TempOutBuffer;
 	
-	DEBUG_IOLog(2,"%s(%p)::SetUpTransmit\n", getName(), this);
+	DEBUG_IOLog(4,"%s(%p)::SetUpTransmit\n", getName(), this);
     
 	//  If we are already in the cycle of transmitting characters,
 	//  then we do not need to do anything.
@@ -3947,21 +3948,21 @@ IOReturn osx_wch_driver_ch341::setControlLines( PortInfo_t *port ){
 	UInt32 state = port->State;
 	IOReturn rtn;
 
-    DEBUG_IOLog(4,"%s(%p)::setControlLines state %u \n", getName(), this, state );
+    DEBUG_IOLog(4,"%s(%p)::setControlLines state=0x%x \n", getName(), this, state );
 	
     UInt8 value=0;
 
     if (state & PD_RS232_S_DTR)  {
         value |= CH341_BIT_DTR;
-	    DEBUG_IOLog(5,"setControlLines DTR ON \n" );
+	    DEBUG_IOLog(4,"%s(%p)::setControlLines DTR ON \n", getName(), this );
     }
     if (state & PD_RS232_S_RFR)  {
         value |= CH341_BIT_RTS;
-        DEBUG_IOLog(5,"setControlLines RTS ON \n" );
+        DEBUG_IOLog(4,"%s(%p)::setControlLines RTS ON \n", getName(), this );
     }
     port->LineControl = value;
 	rtn = ch341_set_handshake(port->LineControl);
-	DEBUG_IOLog(4,"%s(%p)::setControlLines - return: %d \n", getName(), this,  rtn);
+	DEBUG_IOLog(5,"%s(%p)::setControlLines - return: %d \n", getName(), this,  rtn);
 	
 	return rtn;
 }/* end setControlLines */
