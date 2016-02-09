@@ -303,8 +303,6 @@ typedef struct
     UInt8           XOFFchar;
     UInt32          SWspecial[ 0x100 >> SPECIAL_SHIFT ];
     UInt32          FlowControl;    // notify-on-delta & auto_control
-    
-    UInt8           LineControl;
 	
     tXO_State       RXOstate;    /* Indicates our receive state.    */
     tXO_State       TXOstate;    /* Indicates our transmit state, if we have received any Flow Control. */

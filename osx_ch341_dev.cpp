@@ -138,7 +138,7 @@ bool osx_wch_driver_ch341::startSerial()
     
     ch341_control_out (0xa1, 0x501f, 0xd90a);
     ch341_set_baudrate(DEFAULT_BAUD_RATE);
-    ch341_set_handshake(fPort->LineControl);
+    setControlLines(fPort);
     ch341_get_status(fPort);  /* expect 0x9f 0xee */
     
     IOFree(buf, startSerial_buf_size);

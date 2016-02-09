@@ -896,7 +896,6 @@ void osx_wch_driver_ch341::SetStructureDefaults( PortInfo_t *port, bool Init )
     port->TXStats.LowWater      = port->RXStats.HighWater >> 1;
     
     port->FlowControl           = (DEFAULT_AUTO | DEFAULT_NOTIFY);
-    port->LineControl           = 0;
 
     port->FlowControlState		= CONTINUE_SEND;
     port->DCDState				= false;
@@ -3291,16 +3290,11 @@ IOReturn osx_wch_driver_ch341::setSerialConfiguration( void )
 			fBaudCode = fPort->BaudRate;
 			break;
     }
-	
-	if(fBaudCode) {
+    if(fBaudCode)
         rtn = ch341_set_baudrate(fBaudCode);
-        fPort->LineControl |= (CH341_BIT_DTR | CH341_BIT_RTS);
-	}else{
-        fPort->LineControl &= ~(CH341_BIT_DTR | CH341_BIT_RTS);
-    }
-    
-    rtn = ch341_set_handshake(fPort->LineControl);
-    
+    else
+        rtn = kIOReturnBadArgument;
+
     /* Unimplemented:
      * (cflag & CSIZE) : data bits [5, 8]
      * (cflag & PARENB) : parity {NONE, EVEN, ODD}
@@ -3960,8 +3954,7 @@ IOReturn osx_wch_driver_ch341::setControlLines( PortInfo_t *port ){
         value |= CH341_BIT_RTS;
         DEBUG_IOLog(4,"%s(%p)::setControlLines RTS ON \n", getName(), this );
     }
-    port->LineControl = value;
-	rtn = ch341_set_handshake(port->LineControl);
+	rtn = ch341_set_handshake(value);
 	DEBUG_IOLog(5,"%s(%p)::setControlLines - return: %d \n", getName(), this,  rtn);
 	
 	return rtn;
