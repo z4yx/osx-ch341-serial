@@ -490,7 +490,9 @@ private:
 	IOReturn        setControlLines( PortInfo_t *port );
     IOReturn        ch341_set_handshake(UInt8 control);
     UInt32			generateRxQState( PortInfo_t *port );
-	IOReturn		setBreak( bool data);
+    IOReturn		setBreak( bool data);
+
+    IOReturn        ch341_set_termios(UInt32 baud_rate,UInt8  parity,UInt8 charLength,UInt8 stopbits);
 	
     IOReturn        ch341_set_baudrate(UInt32 baud_rate);
     IOReturn        ch341_get_status(PortInfo_t *port);

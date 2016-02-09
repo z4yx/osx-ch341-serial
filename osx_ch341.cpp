@@ -2809,7 +2809,7 @@ IOReturn osx_wch_driver_ch341::dequeueDataAction(OSObject *owner, void *arg0, vo
 		 
 	 }/* end while */
 
-    DEBUG_IOLog(5,"%s(%p)::dequeueDataGated -->Out Dequeue\n", getName(), this);
+    DEBUG_IOLog(5,"%s(%p)::dequeueDataGated -->Out Dequeue *count=%u\n", getName(), this, *count);
 
     return kIOReturnSuccess;
     
@@ -3205,7 +3205,10 @@ Bogus:
 IOReturn osx_wch_driver_ch341::setSerialConfiguration( void )
 {
 	IOReturn rtn;
-    DEBUG_IOLog(4,"%s(%p)::setSerialConfiguration baudrate: %d \n", getName(), this, fPort->BaudRate );
+    UInt8 stopbits, parity;
+    DEBUG_IOLog(4,"%s(%p)::setSerialConfiguration baudrate: %d, TX_Parity: 0x%x, CharLength: %d, StopBits: 0x%x \n",
+                getName(), this,
+                fPort->BaudRate, fPort->TX_Parity, fPort->CharLength, fPort->StopBits);
 	
     fCurrentBaud = fPort->BaudRate;
     
@@ -3290,16 +3293,55 @@ IOReturn osx_wch_driver_ch341::setSerialConfiguration( void )
 			fBaudCode = fPort->BaudRate;
 			break;
     }
+    
+    switch (fPort->StopBits) {
+        default:
+            IOLog("%s(%p)::setSerialConfiguration - Requesting unknown stop bits\n", getName(), this);
+            return kIOReturnBadArgument;
+            break;
+        case 0:
+        case 2:// 1 stop bit
+            stopbits = 1;
+            break;
+            
+        case 3:// 1.5 stop bits
+            //TODO
+        case 4:// 2 stop bits
+            stopbits = 2;
+            break;
+    }
+    
+    switch(fPort->TX_Parity)
+    {
+        case PD_RS232_PARITY_NONE:
+            parity = 0;
+            DEBUG_IOLog(5,"%s(%p)::setSerialConfiguration - PARITY_NONE \n", getName(), this);
+            break;
+            
+        case PD_RS232_PARITY_ODD:
+            parity = 1;
+            DEBUG_IOLog(5,"%s(%p)::setSerialConfiguration - PARITY_ODD \n", getName(), this);
+            break;
+            
+        case PD_RS232_PARITY_EVEN:
+            parity = 2;
+            DEBUG_IOLog(5,"%s(%p)::setSerialConfiguration - PARITY_EVEN \n", getName(), this);
+            break;
+            
+        default:
+            DEBUG_IOLog(2,"%s(%p)::setSerialConfiguration - unknown parity \n", getName(), this);
+            return kIOReturnBadArgument;
+            break;
+    }
+    if (fPort->CharLength<5 || fPort->CharLength>8)
+        return kIOReturnBadArgument;
+    
+    
     if(fBaudCode)
-        rtn = ch341_set_baudrate(fBaudCode);
+        rtn = ch341_set_termios(fBaudCode, parity, fPort->CharLength, stopbits);
     else
         rtn = kIOReturnBadArgument;
 
-    /* Unimplemented:
-     * (cflag & CSIZE) : data bits [5, 8]
-     * (cflag & PARENB) : parity {NONE, EVEN, ODD}
-     * (cflag & CSTOPB) : stop bits [1, 2]
-     */
     return rtn;
 }
 
@@ -3597,7 +3639,8 @@ size_t osx_wch_driver_ch341::removefromQueue( CirQueue *Queue, UInt8 *Buffer, si
 	{
 		*Buffer++ = Value;
 		BytesReceived++;
-	}/* end while */
+    }/* end while */
+    DEBUG_IOLog(5,"%s(%p)::RemovefromQueue BytesReceived=%lu\n", getName(), this, BytesReceived);
 	
     return BytesReceived;
     

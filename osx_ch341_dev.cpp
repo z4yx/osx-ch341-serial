@@ -20,6 +20,7 @@
  * Driver is inspired by the following projects:
  * - osx-pl2303            Copyright (c) 2013 NoZAP B.V., Jeroen Arnoldus (opensource@nozap.me, http://www.nozap.me http://www.nozap.nl )
  *                         Copyright (c) 2006 BJA Electronics, Jeroen Arnoldus (opensource@bja-electronics.nl)
+ * - ch34x.c               Copyright (C)  WCH  2002-2013 Web:  http://www.winchiphead.com
  * - Linux kernel ch341.c  Copyright 2007, Frank A Kingswood <frank@kingswood-consulting.co.uk>
  *                         Copyright 2007, Werner Cornelius <werner@cornelius-consult.de>
  *                         Copyright 2009, Boris Hajduk <boris@hajduk.org>
@@ -250,6 +251,56 @@ IOReturn osx_wch_driver_ch341::ch341_set_baudrate(UInt32 baud_rate)
         r = ch341_control_out(0x9a, 0x0f2c, b);
     
     return r;
+}
+
+
+IOReturn osx_wch_driver_ch341::ch341_set_termios(UInt32 baud_rate,UInt8  parity,UInt8 charLength,UInt8 stopbits)
+{
+    UInt16 value = 0, index = 0;
+    UInt8 reg_value = 0;
+    IOReturn r;
+    UInt32 factor;
+    short divisor;
+    
+    DEBUG_IOLog(4,"%s(%p)::ch341_set_termios %d %d %d %d\n", getName(), this, baud_rate, (UInt32)parity, (UInt32)charLength, (UInt32)stopbits);
+    
+    reg_value |= charLength-5;
+    if(stopbits == 2) //cflag & CSTOPB
+        reg_value |= 0x04;
+    if(parity){ //cflag & PARENB
+        if(parity & 1) //cflag & PARODD
+            reg_value |= (0x08 | 0x00);
+        else
+            reg_value |= (0x08 | 0x10);
+    }
+    
+    if (!baud_rate) //avoid dividing zero
+        return kIOReturnBadArgument;
+    factor = (CH341_BAUDBASE_FACTOR / baud_rate);
+    divisor = CH341_BAUDBASE_DIVMAX;
+    
+    while ((factor > 0xfff0) && divisor) {
+        factor >>= 3;
+        divisor--;
+    }
+    
+    if (factor > 0xfff0)
+        return kIOReturnBadArgument;
+    
+    factor = 0x10000 - factor;
+    
+    //enable SFR_UART RX and TX
+    reg_value |= 0xc0;
+    //enable SFR_UART Control register and timer
+    value |= 0x9c;
+    value |= (UInt16)reg_value << 8;
+    index |= 0x80 | (divisor & 0xff);
+    index |= factor & 0xff00;
+    
+    r = ch341_control_out(0xa1, value, index);
+    
+    return r;
+    
 }
 
 IOReturn osx_wch_driver_ch341::ch341_get_status(PortInfo_t *port)
