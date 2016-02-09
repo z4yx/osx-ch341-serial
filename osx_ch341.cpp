@@ -3538,6 +3538,7 @@ QueueStatus osx_wch_driver_ch341::flush( CirQueue *Queue )
     DEBUG_IOLog(4,"%s(%p)::flush\n", getName(), this );
 	
     Queue->NextChar = Queue->LastChar = Queue->Start;
+    Queue->InQueue = 0;
 	
     return kQueueNoError;
     
