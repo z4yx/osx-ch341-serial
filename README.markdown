@@ -1,25 +1,21 @@
-# osx-pl2303
+# osx-ch341-serial
+CH340/CH341 based USB to Serial Port Adapter driver for Mac OSX. 
 
-This is a driver for the many-and-various Prolific PL2303 serial-to-USB
-adapters that are out there.I just updated it to work on OS X Lion (10.7)
-and OS X Mountain Lion (10.8).
+Currently tested on OSX 10.10.5 Yosemite.
 
-I forked this project from [failberg/osx-pl2303](http://github.com/downloads/failberg/osx-pl2303).
+This is an unofficial open source driver, use at your own risk.
 
-A compiled kernelmodule and installation help can be found at:
-<http://xbsd.nl/2011/07/pl2303-serial-usb-on-osx-lion.html>.
+# Features
+- Unix device node /dev/cu.CH341-*
+- Standard baudrate (300~230400)
+- Databits (5, 6, 7, 8)
+- Stopbits (1, 2)
+- Parity check (none, odd, even)
+- Manual RTS/DTR signal control
 
-I'm happy to receive pull request for updates or patches.
+# Acknowledgements
+Driver is inspired by the following projects:
 
-
-### Additional information from origin.
-
-> If you need to add additional device IDs or vendor IDs, those live in
-> Info.plist; just clone the relevant section of the plist XML and create
-> a new stanza - and be sure to send me a patch!
-
-> Thank you to B.J. Arnoldus for writing the driver in the first place,
-> Michael Haller for patching the driver to work under SL, and the various
-> folks who contributed patches to the Sourceforge tracker, some of which
-> I've applied here.
+- [osx-pl2303](https://github.com/mpepping/osx-pl2303)
+- Linux kernel ch341.c
 
