@@ -196,11 +196,11 @@ IOReturn osx_wch_driver_ch341::setBreak( bool data){
                 getName(), this,  break_reg[0], break_reg[1]);
     
     if (break_state != 0) {
-        DEBUG_IOLog(3,"%s(%p)::setBreak Failed - Enter break state requested\n", getName(), this);
+        DEBUG_IOLog(4,"%s(%p)::setBreak - Enter break state requested\n", getName(), this);
         break_reg[0] &= ~CH341_NBREAK_BITS_REG1;
         break_reg[1] &= ~CH341_NBREAK_BITS_REG2;
     } else {
-        DEBUG_IOLog(3,"%s(%p)::setBreak Failed - Leave break state requested\n", getName(), this);
+        DEBUG_IOLog(4,"%s(%p)::setBreak - Leave break state requested\n", getName(), this);
         break_reg[0] |= CH341_NBREAK_BITS_REG1;
         break_reg[1] |= CH341_NBREAK_BITS_REG2;
     }
@@ -211,6 +211,10 @@ IOReturn osx_wch_driver_ch341::setBreak( bool data){
     
     rtn = ch341_control_out(CH341_REQ_WRITE_REG,
                             ch341_break_reg, reg_contents);
+    if (rtn != kIOReturnSuccess) {
+        DEBUG_IOLog(3,"%s(%p)::setBreak Failed - ch341_control_out return: %d \n", getName(), this,  rtn);
+        goto out;
+    }
 out:
     IOFree(break_reg, 2);
     

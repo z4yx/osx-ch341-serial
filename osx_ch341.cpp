@@ -1864,7 +1864,7 @@ IOReturn osx_wch_driver_ch341::executeEventGated( UInt32 event, UInt32 data, voi
 			
 			old = port->FlowControl;				    // save old modes for unblock checks
             port->FlowControl = data & (CAN_BE_AUTO | CAN_NOTIFY);  // new values, trimmed to legal values
-			DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL port->FlowControl %u\n", getName(), this, port->FlowControl );
+			DEBUG_IOLog(4,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL port->FlowControl %u\n", getName(), this, port->FlowControl );
 		
 			// now cleanup if we've blocked RX or TX with the previous style flow control and we're switching to a different kind
 			// we have 5 different flow control modes to check and unblock; 3 on rx, 2 on tx
@@ -1872,7 +1872,7 @@ IOReturn osx_wch_driver_ch341::executeEventGated( UInt32 event, UInt32 data, voi
 			
 			if ( !(old & PD_RS232_S_CTS) && (PD_RS232_S_CTS & port->FlowControl) )
 				{
-				DEBUG_IOLog(1,"%s(%p)::executeEvent - Automatic CTS flowcontrol On\n", getName(), this);
+				DEBUG_IOLog(4,"%s(%p)::executeEvent - Automatic CTS flowcontrol On\n", getName(), this);
                    
                     //TODO
 				
@@ -1881,7 +1881,7 @@ IOReturn osx_wch_driver_ch341::executeEventGated( UInt32 event, UInt32 data, voi
 				
 			if ( (old & PD_RS232_S_CTS) && !(PD_RS232_S_CTS & port->FlowControl) )
 				{
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - Automatic CTS flowcontrol Off\n", getName(), this);
+					DEBUG_IOLog(4,"%s(%p)::executeEvent - Automatic CTS flowcontrol Off\n", getName(), this);
 					
                     //TODO
 				
@@ -1890,7 +1890,7 @@ IOReturn osx_wch_driver_ch341::executeEventGated( UInt32 event, UInt32 data, voi
 				
 			if (!fTerminate && old && (old ^ port->FlowControl))		// if had some modes, and some modes are different
 			{
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - Changed\n", getName(), this );
+					DEBUG_IOLog(4,"%s(%p)::executeEvent - Changed\n", getName(), this );
 			
 			
 			
@@ -1900,7 +1900,7 @@ IOReturn osx_wch_driver_ch341::executeEventGated( UInt32 event, UInt32 data, voi
 				// if switching away from rx xon/xoff and we've sent an xoff, unblock
 				if (SwitchingAwayFrom(PD_RS232_A_RXO) && port->xOffSent)
 				{
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL send xoff\n", getName(), this);
+					DEBUG_IOLog(4,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL send xoff\n", getName(), this);
 					addBytetoQueue(&(port->TX), port->XONchar);
 					port->xOffSent = false;
 					setUpTransmit( );
@@ -1909,7 +1909,7 @@ IOReturn osx_wch_driver_ch341::executeEventGated( UInt32 event, UInt32 data, voi
 				// if switching away from RTS flow control and we've lowered RTS, need to raise it to unblock
 				if (SwitchingAwayFrom(PD_RS232_A_RTS) && !port->RTSAsserted)
 				{
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL set RTS\n", getName(), this);
+					DEBUG_IOLog(4,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL set RTS\n", getName(), this);
 					port->RTSAsserted = true;
 					port->State |= PD_RS232_S_RFR;		    // raise RTS again
 				}
@@ -1917,7 +1917,7 @@ IOReturn osx_wch_driver_ch341::executeEventGated( UInt32 event, UInt32 data, voi
 				// if switching away from DTR flow control and we've lowered DTR, need to raise it to unblock
 				if (SwitchingAwayFrom(PD_RS232_A_DTR) && !port->DTRAsserted)
 				{
-					DEBUG_IOLog(1,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL set DTR\n", getName(), this);
+					DEBUG_IOLog(4,"%s(%p)::executeEvent - PD_E_FLOW_CONTROL set DTR\n", getName(), this);
 					port->DTRAsserted = true;			
 					port->State |= PD_RS232_S_DTR;		    // raise DTR again
 				}
@@ -2772,7 +2772,12 @@ IOReturn osx_wch_driver_ch341::dequeueDataAction(OSObject *owner, void *arg0, vo
 		 
 		 if ( rtn != kIOReturnSuccess )
 		 {
-			 IOLog("%s(%p)::dequeueDataGated - INTERRUPTED\n", getName(), this );
+             if (rtn == kIOReturnAborted) {
+                 DEBUG_IOLog(4, "%s(%p)::dequeueDataGated - INTERRUPTED\n", getName(), this );
+             }else{
+                 DEBUG_IOLog(3, "%s(%p)::dequeueDataGated - io error 0x%x\n", getName(), this, rtn);
+             }
+			 
 			 //			LogData( kUSBIn, *count, buffer );
 			 return rtn;
 		 }
@@ -3120,7 +3125,8 @@ void osx_wch_driver_ch341::dataReadComplete( void *obj, void *param, IOReturn rc
 		} else {
 			DEBUG_IOLog(3,"osx_wch_driver_ch341::dataReadComplete dataReadComplete - queueing bulk read failed\n");
 		}
-		
+    } else if (rc == kIOReturnAborted){
+        DEBUG_IOLog(4,"osx_wch_driver_ch341::dataReadComplete - kIOReturnAborted\n" );
 	} else {
     Fail:
 		/* Read returned with error */
@@ -3421,7 +3427,7 @@ QueueStatus osx_wch_driver_ch341::getBytetoQueue( CirQueue *Queue, UInt8 *Value 
 	/* Check to see if the queue has something in it.   */
 	
     if ( (Queue->NextChar == Queue->LastChar) && !Queue->InQueue ) {
-		DEBUG_IOLog(2,"osx_wch_driver_ch341::getBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueEmpty\n" );
+		DEBUG_IOLog(4,"osx_wch_driver_ch341::getBytetoQueue IOLockUnLock( port->serialRequestLock ); kQueueEmpty\n" );
 
 		IOLockUnlock(fPort->serialRequestLock);
 		return kQueueEmpty;

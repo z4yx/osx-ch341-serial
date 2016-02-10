@@ -36,7 +36,7 @@
 
 
 #if DEBUG
-#define DEBUG_IOLog(level,args...) do{if((level)<=4) IOLog ("ch341: "  args);}while(0)
+#define DEBUG_IOLog(level,args...) do{if((level)<=3) IOLog ("ch341: "  args);}while(0)
 #else
 #define DEBUG_IOLog(args...)
 #endif
